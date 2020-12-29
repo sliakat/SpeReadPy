@@ -1,5 +1,6 @@
 # SpeReadPy
-Python spe file reader, works on v2.0 (WinSpec/32) and v3.0 (LightField) versions
+Python spe file reader, works on v2.0 (WinSpec/32) and v3.0 (LightField) versions.
+
 readSpe.py is the function that will load the relevant content from a given spe file.
 visualizeSpe.py is an example of how to load and visualize the data using pyplot
 
