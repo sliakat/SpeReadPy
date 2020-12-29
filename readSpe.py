@@ -53,22 +53,21 @@ def readSpe(filePath):
                 regionList.append(ROI(regWidth,regHeight,regStride))
             dataList=list()
             regionOffset=0
+            
+            #read entire datablock
+            f.seek(0)
+            bpp = np.dtype(dataTypes[pixFormat]).itemsize
+            numPixels = np.int((xmlLoc-4100)/bpp)  
+            totalBlock = np.fromfile(f,dtype=dataTypes[pixFormat],count=numPixels,offset=4100)
             for i in range(0,len(regionList)):
+                offLen=[]                
                 if i>0:
-                    regionOffset += regionList[i-1].stride
-                #print(regionOffset)
+                    regionOffset += (regionList[i-1].stride)/bpp                    
                 for j in range(0,numFrames):
-                    offset=4100+regionOffset+j*readoutStride
-                    #print(offset)
-                    f.seek(0)
-                    if j==0:
-                        regionData=np.fromfile(f,dtype=dataTypes[pixFormat],count=(regionList[i].width*regionList[i].height),offset=offset)
-                    else:
-                        regionData=np.append(regionData,np.fromfile(f,dtype=dataTypes[pixFormat],count=(regionList[i].width*regionList[i].height),offset=offset))
-                        #print(np.size(regionData))
-                    if j==numFrames-1:
-                        regionData=np.reshape(regionData,(numFrames,regionList[i].height,regionList[i].width),order='C')
-                        dataList.append(regionData)
+                    offLen.append((np.int(regionOffset+(j*readoutStride/bpp)),regionList[i].width*regionList[i].height))     
+                regionData = np.concatenate([totalBlock[offset:offset+length] for offset,length in offLen])
+                dataList.append(np.reshape(regionData,(numFrames,regionList[i].height,regionList[i].width),order='C'))
+
             calFlag=False                
             for child in xmlRoot[1]:
                 if 'Wavelength' in child.tag:
@@ -93,7 +92,6 @@ def readSpe(filePath):
             dataList=list()
             for j in range(0,numFrames):
                 offset=4100+j*(frameWidth*frameHeight)
-                #print(offset)
                 f.seek(0)
                 if j==0:
                     regionData=np.fromfile(f,dtype=dataTypes2[datatype],count=(frameWidth*frameHeight),offset=offset)
@@ -105,5 +103,3 @@ def readSpe(filePath):
                     dataList.append(regionData)
             totalData=dataContainer(dataList)
             return totalData
-            
-
