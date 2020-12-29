@@ -30,9 +30,9 @@ except:
 dataList = totalData.data
 
 #image contrast adjustments
-sortedRegion=np.sort(np.reshape(dataList[regionToDisplay],(np.size(dataList[regionToDisplay]))))
-display_min = sortedRegion[np.int(np.floor(0.05*np.size(dataList[regionToDisplay])-1))]
-display_max = sortedRegion[np.int(np.ceil(0.95*np.size(dataList[regionToDisplay])-1))]
+display_min = np.int(np.percentile(dataList[regionToDisplay].flatten(),5))
+display_max = np.int(np.percentile(dataList[regionToDisplay].flatten(),95))
+
 if display_min < 1:
     display_min = 1
 
@@ -40,10 +40,9 @@ if display_min < 1:
 #     display_max = 65535
 
 figCount=0
+displayRange = range(0,5)
 
-
-for k in range(0,np.size(dataList[regionToDisplay],0)): #show up to 5 figs, starting with whatever first input in range is 
-    #data = dataList[regionToDisplay][:,:,k]
+for k in displayRange: #whatever range of figs dictated by displayRange
     data = dataList[regionToDisplay][k,:,:]
     fig = plt.figure('Frame %d'%(k+1))
     ax = fig.add_subplot(111)
@@ -64,6 +63,5 @@ for k in range(0,np.size(dataList[regionToDisplay],0)): #show up to 5 figs, star
             ax.imshow(data,origin='upper',vmin=display_min,vmax=display_max,cmap='gray')
             ax.set(xlabel='Column')
         ax.set(ylabel='Row')
-    figCount+=1        
-    if figCount>4:
-        break
+        if k+1 >= np.size(dataList[regionToDisplay],0):
+            break
