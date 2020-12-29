@@ -10,3 +10,4 @@ dataContainer.xmlFooter will exist in the case of an spe3.0 file.
 dataContainer.wavelengths (wavelength calibration in x-axis) will exist if the data was taken with a calibrated detector + spectrometer combo in LightField.
 
 Feel free to suggest changes / create own branch if desired.
+More ideas / examples of visualization welcome!
