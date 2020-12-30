@@ -60,7 +60,7 @@ def readSpe(filePath):
             numPixels = np.int((xmlLoc-4100)/bpp)  
             totalBlock = np.fromfile(f,dtype=dataTypes[pixFormat],count=numPixels,offset=4100)
             for i in range(0,len(regionList)):
-                offLen=[]                
+                offLen=list()                
                 if i>0:
                     regionOffset += (regionList[i-1].stride)/bpp                    
                 for j in range(0,numFrames):
@@ -89,17 +89,17 @@ def readSpe(filePath):
             frameHeight=np.int(np.fromfile(f,dtype=np.uint16,count=1)[0])
             f.seek(1446)
             numFrames=np.fromfile(f,dtype=np.int32,count=1)[0]
-            dataList=list()
+            numPixels = frameWidth*frameHeight*numFrames
+            bpp = np.dtype(dataTypes2[datatype]).itemsize
+            dataList=list()            
+            f.seek(0)
+            totalBlock = np.fromfile(f,dtype=dataTypes2[datatype],count=numPixels,offset=4100)
+            offLen=list()
             for j in range(0,numFrames):
-                offset=4100+j*(frameWidth*frameHeight)
-                f.seek(0)
-                if j==0:
-                    regionData=np.fromfile(f,dtype=dataTypes2[datatype],count=(frameWidth*frameHeight),offset=offset)
-                else:
-                    regionData=np.append(regionData,np.fromfile(f,dtype=dataTypes2[datatype],count=(frameWidth*frameHeight),offset=offset))
-                    #print(np.size(regionData))
-                if j==numFrames-1:
-                    regionData=np.reshape(regionData,(numFrames,frameHeight,frameWidth),order='C')
-                    dataList.append(regionData)
+                offLen.append((np.int((j*frameWidth*frameHeight)),frameWidth*frameHeight))
+            regionData = np.concatenate([totalBlock[offset:offset+length] for offset,length in offLen])
+            dataList.append(np.reshape(regionData,(numFrames,frameHeight,frameWidth),order='C'))
             totalData=dataContainer(dataList)
             return totalData
+            
+
