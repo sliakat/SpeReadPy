@@ -260,3 +260,8 @@ else:
     print("No camera detected. Uninitializing.")
         
 errUnInit=picam.Picam_UninitializeLibrary()
+try:
+    del circBuff
+except:
+    pass
+    
