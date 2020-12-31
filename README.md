@@ -13,5 +13,5 @@ dataContainer.wavelengths (wavelength calibration in x-axis) will exist if the d
 Feel free to suggest changes / create own branch if desired.
 More ideas / examples of visualization welcome!
 
-**IMPORTANT: This repo will also contain helpful miscellaneous scripts and tutorials for automation of Teledyne Princeton Instruments systems with PICam and LightField Automation.**
+**IMPORTANT: This repo will also contain helpful miscellaneous scripts and tutorials for automation of Teledyne Princeton Instruments systems with PICam and LightField Automation. Please browse through the subfolders and review the READMEs for those folders!**
 
