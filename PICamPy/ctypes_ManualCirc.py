@@ -58,7 +58,7 @@ def picamOperation():
         offset = ((dat.readout_count -1) * stride)/2
         data = x[np.int(offset):np.int((colVal.value*rowVal.value + offset))]    
         count += dat.readout_count    
-        if np.mod(count, np.ceil(rate)/2)==0 or count==1 or count==frameCt:    #update display approx every second, and first annd last frame
+        if np.mod(count, np.ceil(rate)/2)==0 or count==1 or count==frameCt:    #update display approx 2 frames per second, or 1fps if camera isn't @ 2fps.
             if rowVal.value==1:
                 reshI = np.copy(data)
                 #print(np.size(reshI,0))
