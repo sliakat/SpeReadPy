@@ -19,7 +19,7 @@ from pyqtgraph.Qt import QtCore, QtGui
 import threading
 import sys
 
-numFrames = 200
+numFrames = 50
 targetMem = 512 #target MiB of RAM to allocate for circular 
 
 reshI = np.ones([1024,1024])
@@ -268,6 +268,7 @@ if __name__ == '__main__':
     t1=threading.Thread(target=picamOperation)
     t1.start()
     if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
+        QtGui.QApplication.setQuitOnLastWindowClosed(True)
         QtGui.QApplication.instance().exec_()
     t1.join()
  
