@@ -155,7 +155,7 @@ def picamOperation():
         else:    
             #Exposure (if not an ICCD)
             paramExp=ctypes.c_int(calcParam(2,2,23)) #PicamParameter_ExposureTime
-            expEntry.value = 20 #in ms
+            expEntry.value = 100 #in ms
             errSet=picam.Picam_SetParameterFloatingPointValue(cam,paramExp,expEntry)
             errGet=picam.Picam_GetParameterFloatingPointValue(cam,paramExp,ctypes.byref(expTime))
             if errSet!=0:
