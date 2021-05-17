@@ -39,7 +39,7 @@ def picamOperation():
     
     def analyzeDat(dat,data,frameCt,stride,rate,count):
         global reshI, lk
-        lk. acquire()
+        lk.acquire()
         x=ctypes.cast(dat.initial_readout,ctypes.POINTER(ctypes.c_uint16))
         offset = ((dat.readout_count -1) * stride)/2
         data = x[int(offset):int((colVal.value*rowVal.value + offset))]    
