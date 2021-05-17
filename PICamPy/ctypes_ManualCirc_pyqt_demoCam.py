@@ -26,7 +26,7 @@ targetMem = 512 #target MiB of RAM to allocate for circular
 reshI = np.ones([1024,1024])
 imv = pg.image(reshI)
 
-count = 0 
+count = 0   #running counter for how many cumulative frames have been captured
 picam = ctypes.WinDLL("C:\Program Files\Common Files\Princeton Instruments\Picam\Runtime\Picam.dll")
 lk = threading.Lock()
 
@@ -38,6 +38,7 @@ def picamOperation():
     global reshI,lk
     
     def analyzeDat(dat,data,frameCt,stride,rate,count):
+        #this function is where the read out data is processed into numpy array
         global reshI, lk
         lk.acquire()
         x=ctypes.cast(dat.initial_readout,ctypes.POINTER(ctypes.c_uint16))
