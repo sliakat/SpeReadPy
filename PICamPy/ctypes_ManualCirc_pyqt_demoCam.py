@@ -21,24 +21,31 @@ import threading
 import sys
 
 numFrames = 50
-targetMem = 512 #target MiB of RAM to allocate for circular 
+targetMem = 512 #target MiB of RAM to allocate for circular
 
-reshI = np.ones([1024,1024])
-imv = pg.image(reshI)
+reshI = np.ones([2048,2048])
+imvA = pg.image(reshI) #dummy to launch app
+img = pg.ImageItem(image=reshI)
+imv = pg.ImageView(imageItem=img)
+imv.show()
 
-count = 0   #running counter for how many cumulative frames have been captured
+count = 0 
 picam = ctypes.WinDLL("C:\Program Files\Common Files\Princeton Instruments\Picam\Runtime\Picam.dll")
 lk = threading.Lock()
 
 def animUpdate():
-    global imv, reshI,lk
-    imv.setImage(reshI.T,autoLevels=True)
+    global reshI,lk
+    lk.acquire()
+    display_min = int(np.percentile(reshI.flatten(),5))
+    display_max = int(np.percentile(reshI.flatten(),95))
+    img.setLevels([display_min,display_max])
+    img.setImage(image=reshI.T,autoDownsample=True,autoLevels=False)
+    lk.release()
     
 def picamOperation():
     global reshI,lk
     
     def analyzeDat(dat,data,frameCt,stride,rate,count):
-        #this function is where the read out data is processed into numpy array
         global reshI, lk
         lk.acquire()
         x=ctypes.cast(dat.initial_readout,ctypes.POINTER(ctypes.c_uint16))
@@ -124,8 +131,8 @@ def picamOperation():
     
     if errOpenCam > 0:
         #if no live camera connected, open a demo Pro512 
-        picam.Picam_ConnectDemoCamera(1203,b'SlTestDemo',ctypes.byref(camID))
-        errOpenCam = picam.Picam_OpenCamera(ctypes.byref(camID),ctypes.byref(cam));    
+        picam.Picam_ConnectDemoCamera(1206,b'SlTestDemo',ctypes.byref(camID))
+        errOpenCam = picam.Picam_OpenCamera(ctypes.byref(camID),ctypes.byref(cam))
   
     if errOpenCam == 0:               
         #get info about camera frame size  
@@ -270,7 +277,7 @@ def picamOperation():
 if __name__ == '__main__':
     timer = pg.QtCore.QTimer()
     timer.timeout.connect(animUpdate)
-    timer.start(33)     #cap display at ~30fps
+    timer.start(35)     #cap display at ~30fps
     t1=threading.Thread(target=picamOperation)
     t1.start()
     if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
