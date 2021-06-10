@@ -1,4 +1,4 @@
-Code used for the three part webinar that can be found on your webiste (https://www.princetoninstruments.com/products/software-family/lightfield)
+Code used for the three part webinar that can be found on our webiste (https://www.princetoninstruments.com/products/software-family/lightfield)
 
 Direct links to webinar videos:<br/>
   -Part 1: https://www.youtube.com/watch?v=ZJsrB1p1VJ4  
