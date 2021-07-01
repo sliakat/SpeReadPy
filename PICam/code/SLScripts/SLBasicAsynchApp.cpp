@@ -59,7 +59,7 @@ piflt GetMean(std::vector<pi16u> imData)
     return runningCt / imData.size();
 }
 
-//asynchronous acquisiton and type cqsting of returned frame data
+//asynchronous acquisiton and type casting of returned frame data
 void Acquire(PicamHandle cam)
 {
     PicamAcquisitionStatus status; PicamAvailableData available; piint readoutStride; piint frameSize;
