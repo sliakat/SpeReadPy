@@ -142,17 +142,19 @@ void Acquire(PicamHandle cam)
 }
 
 //open the first connected camera. If no connected cameras, open a virtual ProEM
-void OpenCamera(PicamCameraID *camID, PicamHandle *camHandle)
+void OpenCamera(PicamCameraID *camID, PicamHandle *camHandle, pibool *demo)
 {
     const pichar* string;
     if (Picam_OpenFirstCamera(camHandle) == PicamError_None)
     {
         Picam_GetCameraID(*(camHandle), camID);
+        *demo = false;
     }
     else
     {
         Picam_ConnectDemoCamera(PicamModel_ProEMHS1024BExcelon, "VirtualCamera", camID);
         Picam_OpenCamera(camID, camHandle);
+        *demo = true;
     }
     Picam_GetEnumerationString(PicamEnumeratedType_Model, camID->model, &string);
     printf("Camera opened: %s  (SN:%s) [%s]\n", string, camID->serial_number, camID->sensor_name);
@@ -164,9 +166,9 @@ int main()
 {
     //workflow for PICam experiment: initialize --> open camera --> set parameters --> acquire --> close camera --> uninitialize
     Picam_InitializeLibrary();
-    PicamHandle camera; PicamCameraID id;
+    PicamHandle camera; PicamCameraID id; pibool isDemo = false;
 
-    OpenCamera(&id, &camera);
+    OpenCamera(&id, &camera, &isDemo);
 
     if (ArmParameters(camera))
     {
@@ -175,6 +177,9 @@ int main()
     }
 
     Picam_CloseCamera(camera);
-    Picam_DisconnectDemoCamera(&id);
+    if (isDemo)
+    {
+        Picam_DisconnectDemoCamera(&id);
+    }
     Picam_UninitializeLibrary();
 }
