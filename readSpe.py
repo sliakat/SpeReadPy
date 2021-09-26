@@ -35,7 +35,7 @@ def readSpe(filePath):
         speVer = np.fromfile(f,dtype=np.float32,count=1)[0]
     
     if speVer==3:
-        with open(filePath) as f:
+        with open(filePath, encoding="utf8") as f:
             f.seek(xmlLoc)
             xmlFooter = f.read()
             xmlRoot = ET.fromstring(xmlFooter)            
@@ -77,10 +77,11 @@ def readSpe(filePath):
             if calFlag==False:
                 totalData=dataContainer(dataList,xmlFooter=xmlFooter)
             return totalData
+
         
     elif speVer<3:
         dataTypes2 = {0:np.float32, 1:np.int32, 2:np.int16, 3:np.uint16, 5:np.float64, 6:np.uint8, 8:np.uint32}
-        with open(filePath) as f:
+        with open(filePath, encoding="utf8") as f:
             f.seek(108)
             datatype=np.fromfile(f,dtype=np.int16,count=1)[0]
             f.seek(42)
@@ -102,4 +103,3 @@ def readSpe(filePath):
             totalData=dataContainer(dataList)
             return totalData
             
-
