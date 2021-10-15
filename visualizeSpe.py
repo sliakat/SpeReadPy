@@ -29,17 +29,7 @@ for i in range(0,len(filePath)):
         print('No wavelength calibration in spe.')
     
     dataList = totalData.data
-    
-    #image contrast adjustments
-    display_min = int(np.percentile(dataList[regionToDisplay].flatten(),5))
-    display_max = int(np.percentile(dataList[regionToDisplay].flatten(),95))
-    
-    if display_min < 1:
-        display_min = 1
-    
-    # if display_max > 65535:
-    #     display_max = 65535
-    
+      
     figCount=0
     displayRange = range(0,1)
     
@@ -47,6 +37,12 @@ for i in range(0,len(filePath)):
         data = dataList[regionToDisplay][k,:,:]
         fig = plt.figure('%s, Frame %d'%(filePath[i],k+1))
         ax = fig.add_subplot(111)
+        #image contrast adjustments
+        display_min = int(np.percentile(data.flatten(),5))
+        display_max = int(np.percentile(data.flatten(),95))    
+        if display_min < 1:
+            display_min = 1
+            
         if np.size(data,0)==1:
             try:
                 ax.plot(wavelengths,data[0])
