@@ -5,7 +5,7 @@ readSpe.py is the function that will load the relevant content from a given spe 
 
 visualizeSpe.py is an example of how to load and visualize the data using pyplot
 
-showSpe.py is a function that allows the operations done in the visualizeSpe.py script to be called from another script -- 1 line gets you a plot and possibly xml output (if desired)
+showSpe.py is a function that allows the operations done in the visualizeSpe.py script to be called from another script -- 1 line gets you a plot, xml, fig handle, and WL cal (if it exists in the spe).
 
 readSpe takes a file path (including filename) as a string. It then outputs spe file content (data, xml footer, wavelength cal if [if applicable]) to a dataContainer class (defined in the readSpe.py file).
 
