@@ -6,21 +6,23 @@ Created on Fri Oct 15 09:57:11 2021
 """
 
 #kwargs: region (which region to display), frames (#frames),
+#   pixAxis (T/F, if true, x-axis returned in pix even if there is WL cal)
 #
-#Return tuple will be in the form: (data, xml, fig, waveCal)
+#Return tuple will be in the form: (data, xml, ax, waveCal)
 #   if waveCal doesn't exist, will return 0
 
 from readSpe import readSpe
 from matplotlib import pyplot as plt
 import numpy as np
 
-def showSpe(filename,*,region: int=0,frames: int=1):
+def showSpe(filename,*,region: int=0,frames: int=1, pixAxis: bool=False):
     #mainly cpp from visualizeSpe test script
     totalData = readSpe(filename)
     waveCal=False
+    xmlFooter = 'xml footer does not exist for spe2.0 files' 
     try:
-        xmlFooter = totalData.xmlFooter
-        wavelengths = totalData.wavelengths
+        xmlFooter = totalData.xmlFooter        
+        wavelengths = totalData.wavelengths        
         waveCal=True
     except:
         print('No wavelength calibration in spe.')
@@ -46,7 +48,7 @@ def showSpe(filename,*,region: int=0,frames: int=1):
                 ax.plot(data[0])
             ax.set_ylabel('Intensity (counts)')
         else:
-            if waveCal==True:
+            if waveCal==True and pixAxis==False:
                 #aspect=(np.size(data,0)/np.size(data,1))
                 aspect = 0.25
                 ax.imshow(data,vmin=display_min,vmax=display_max,cmap='gray',extent=[wavelengths[0],wavelengths[-1],np.size(data,0),0],aspect=aspect)
@@ -60,6 +62,6 @@ def showSpe(filename,*,region: int=0,frames: int=1):
             
     #returns
     if waveCal:
-        return (dataList[region], xmlFooter, fig, wavelengths)
+        return (dataList[region], xmlFooter, ax, wavelengths)
     else:
-        return (dataList[region], xmlFooter, fig, [0])
+        return (dataList[region], xmlFooter, ax, [0])
