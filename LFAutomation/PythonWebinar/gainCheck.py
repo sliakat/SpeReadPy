@@ -111,8 +111,6 @@ def GetAnalogGain():
     #calculation
     meanSignal = np.mean(illuminated[0,:,:] - bias[0,:,:])
     variance = np.var((illuminated[1,:,:].flatten() - illuminated[2,:,:].flatten()))/2
-    # if variance == 0:
-    #     variance = 1 #prevent divide by 0 errors when testing code w/ demo cameras
     analogGain = meanSignal / variance
     return analogGain
     
