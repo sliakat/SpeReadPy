@@ -9,7 +9,7 @@ Live FFT Application Example:<br/>
   -ftp://ftp.princetoninstruments.com/Public/TechSupport/SL/Automation/Webinar/PythonAutomation.LiveFFT.mkv
   
 Gain Check: <br/>
-  -video annotation coming soon
+  -https://www.youtube.com/watch?v=MHig8gGPP48
   -new concepts include getting settings capabilities and ranges, looping through possible camera settings configurations.
   
  
