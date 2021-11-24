@@ -3,8 +3,6 @@
 
 import ctypes
 import numpy as np
-import threading
-import sys
 import os
 import cv2
 
@@ -62,6 +60,7 @@ class Camera:
 		self.picamLib = ctypes.cdll.LoadLibrary(libPath)
 		self.counter = 0
 		self.totalData = np.zeros(0)
+		self.windowName = ''
 		self.Initialize()
 
 	def ResetCount(self):
@@ -106,9 +105,12 @@ class Camera:
 				self.Uninitialize()
 			else:
 				self.picamLib.Picam_GetCameraID(self.cam,ctypes.byref(self.camID))
+		else:
+			self.picamLib.Picam_GetCameraID(self.cam,ctypes.byref(self.camID))
 		print('Camera Sensor: %s, Serial #: %s'%(self.camID.sensor_name.decode('utf-8'),self.camID.serial_number.decode('utf-8')))
 		self.GetFirstROI()
 		print('\tFirst ROI: %d (cols) x %d (rows)'%(self.numCols,self.numRows))
+		self.windowName = 'Readout from %s'%(self.camID.sensor_name.decode('utf-8'))
 
 	def ProcessData(self,data, readStride, dispBool):
 		x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_uint16))
@@ -118,11 +120,20 @@ class Camera:
 			self.counter += 1
 			self.totalData = np.append(self.totalData,readoutDat)
 			if i == data.readout_count-1:
-				if dispBool:	#display only every 5 for more stability
-					#pass
+				if dispBool:
 					normImg = cv2.normalize(np.reshape(readoutDat,(self.numRows,self.numCols)),None,alpha=0, beta=65535, norm_type=cv2.NORM_MINMAX)
-					cv2.imshow("Frame", normImg)
+					cv2.imshow(self.windowName, normImg)
 					cv2.waitKey(50)
+
+	def WindowSize(self):
+		aspect = 1
+		if self.numRows > 1080:
+			aspect = int(self.numRows/1080)
+		elif self.numCols > 1920:
+			aspect = int(self.numCols/1920)
+		winWidth = int(self.numCols/aspect)
+		winHeight = int(self.numRows/aspect)
+		return winWidth, winHeight
 
 	def Acquire(self,*,frames: int=1):
 		display = False
@@ -137,7 +148,10 @@ class Camera:
 			rStride = ctypes.c_int(0)
 			self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(rStride))
 			if self.numRows > 1:
-				display = True				
+				display = True
+				cv2.namedWindow(self.windowName,cv2.WINDOW_NORMAL)
+				winWidth, winHeight = self.WindowSize()
+				cv2.resizeWindow(self.windowName,winWidth,winHeight)
 			else:
 				print('**Note: will not live display line plot.**')
 			self.picamLib.Picam_StartAcquisition(self.cam)
@@ -150,7 +164,9 @@ class Camera:
 				self.picamLib.Picam_WaitForAcquisitionUpdate(self.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
 				if dat.readout_count > 0:					
 					self.ProcessData(dat, rStride.value, display)
-			print('...%d readouts processed.'%(self.counter))
+			print('...Acquisiton Finished, %d readouts processed.'%(self.counter))
+			if display:
+				print('Viewer window will close in 20 secs. You can also press key after selecting viewer to exit.')
 			cv2.waitKey(20000)				
 		return np.copy(np.reshape(self.totalData,(self.counter,self.numRows,self.numCols)))
 
