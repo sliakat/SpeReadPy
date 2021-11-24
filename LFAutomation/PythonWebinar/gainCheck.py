@@ -35,7 +35,8 @@ from PrincetonInstruments.LightField.AddIns import RegionOfInterest
 
 quality = {1:'LowNoise', 2:'HighCap', 3:'EM', 4:'HighSpd'}
 gain = {1:'Low', 2:'Med', 3:'High'}
-dataFormat = {1:ctypes.c_ushort, 2:ctypes.c_uint, 3:ctypes.c_float}
+dataFormat = {1:ctypes.c_uint16, 2:ctypes.c_uint32, 3:ctypes.c_float}
+byteDiv = {1:2, 2:4, 3:4}
 
 def SetROI():
     #if >= 100 rows, set to 100x100 ROI, else set to 100x1
@@ -66,25 +67,29 @@ def LoadCamera(*,serial: str):
             break
     if not found:
         print('Desired camera not found or available.')
+
+#note, this barebones algo won't work for most practical cases, as full well will be hit on lower gain settings, don't use this        
+def ScaleExposure(*,target: int=55000):    #assumes user has set the camera up accordingly (50-60k mean) at highest gain setting
+    global startExposure
+    expScaled = np.round((target / np.mean(DataToNumpy(experiment.Capture(1), 1).flatten())) * startExposure, decimals=2)
+    return expScaled
         
 def DataToNumpy(imageDataSet, numFrames):
-    dataArray = np.zeros(0)
     #find cols and rows from returned data using length of the perpecdicular slice
     numRows = imageDataSet.GetColumn(0,0,0).GetData().Length
     numCols = imageDataSet.GetRow(0,0,0).GetData().Length
     dataFmt = imageDataSet.GetFrame(0,0).Format
-    for i in range(0,numFrames):    
-        dataBuf = imageDataSet.GetFrame(0,i).GetData()     #.NET array
-        src_hndl = GCHandle.Alloc(dataBuf, GCHandleType.Pinned)
-        try:
-            src_ptr = src_hndl.AddrOfPinnedObject().ToInt64()
-            buf_type = dataFormat[dataFmt]*len(dataBuf)
-            cbuf = buf_type.from_address(src_ptr)
-            resultArray = np.frombuffer(cbuf, dtype=cbuf._type_)
-        finally:        
-            if src_hndl.IsAllocated: src_hndl.Free() 
-        dataArray = np.append(dataArray,resultArray)        
-    return np.reshape(dataArray, (numFrames,numRows,numCols))
+    
+    dataBuf = imageDataSet.GetDataBuffer()   #.NET Array (System.Byte[])
+    src_hndl = GCHandle.Alloc(dataBuf, GCHandleType.Pinned)
+    try:
+        src_ptr = src_hndl.AddrOfPinnedObject().ToInt64()
+        buf_type = dataFormat[dataFmt]*int(len(dataBuf)/byteDiv[dataFmt])
+        cbuf = buf_type.from_address(src_ptr)        
+        resultArray = np.frombuffer(cbuf, dtype=cbuf._type_)        
+    finally:        
+        if src_hndl.IsAllocated: src_hndl.Free() 
+    return np.reshape(resultArray, (numFrames,numRows,numCols))
     
 def WriteFile(string):
     filename = 'C:\\Users\\sliakat\\Documents\\Python Gain Log\\GainLog.SN%s.txt'%SNDesired
@@ -95,6 +100,7 @@ def WriteFile(string):
         f.write(string)
 
 def GetAnalogGain():
+    global scaleExp, startExposure
     #discard first frame
     experiment.SetValue(ExperimentSettings.AcquisitionFramesToInitiallyDiscard, 1)
     #bias w/ 0-expose (avg of 5 dark frames)
@@ -102,18 +108,21 @@ def GetAnalogGain():
     experiment.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationMethod, 2) #1 = sum, 2 = avg
     experiment.SetValue(CameraSettings.ShutterTimingExposureTime, experiment.GetCurrentRange(CameraSettings.ShutterTimingExposureTime).Minimum) #min exposure for camera
     bias = DataToNumpy(experiment.Capture(1), 1)
-    
     #3 exposed frames, frame 1 to get mean illumination, frames 2-3 to get variance
     experiment.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationFramesCombined, 1)
-    experiment.SetValue(CameraSettings.ShutterTimingExposureTime, 100)
-    illuminated = DataToNumpy(experiment.Capture(3), 3)
-    
+    if scaleExp:    
+        expUsed = ScaleExposure()
+    else:
+        expUsed = startExposure
+    experiment.SetValue(CameraSettings.ShutterTimingExposureTime, expUsed)
+    print('\tExposure used: %4.2f ms.'%(expUsed))
+    illuminated = np.float32(DataToNumpy(experiment.Capture(3), 3))
     #calculation
-    meanSignal = np.mean(illuminated[0,:,:] - bias[0,:,:])
-    variance = np.var((illuminated[1,:,:].flatten() - illuminated[2,:,:].flatten()))/2
+    meanSignal = np.mean(illuminated[0,:,:] - bias[0,:,:])    
+    variance = np.var(illuminated[1,:,:].flatten() - illuminated[2,:,:].flatten())/2
     analogGain = meanSignal / variance
     return analogGain
-    
+
 def CycleSettings(string):    
     global finalStr
     for s in experiment.GetCurrentCapabilities(CameraSettings.AdcSpeed):      
@@ -132,11 +141,13 @@ def CycleSettings(string):
             finalStr += (gainStr + '\n')
 
 def InitializeCycle():
-    global finalStr
+    global finalStr, startExposure
     #force one port
     if experiment.Exists(CameraSettings.ReadoutControlPortsUsed):
         if not experiment.IsReadOnly(CameraSettings.ReadoutControlPortsUsed):
             experiment.SetValue(CameraSettings.ReadoutControlPortsUsed, 1)
+    #get starting exposure time as a basis
+    startExposure = experiment.GetValue(CameraSettings.ShutterTimingExposureTime)
     if experiment.Exists(CameraSettings.AdcQuality):
         for q in experiment.GetMaximumCapabilities(CameraSettings.AdcQuality):
             outputStr = ''
@@ -153,9 +164,12 @@ auto = Automation(True, List[String]())
 experiment = auto.LightFieldApplication.Experiment
 experiment.Load('Blank')
 finalStr=''
+startExposure = 100
+scaleExp = False
 
 SNDesired = '05579519'
 
-#LoadCamera(serial=SNDesired)
+LoadCamera(serial=SNDesired)
 
+#run this after the camera has been set up w/ diode accordingly
 #InitializeCycle()
