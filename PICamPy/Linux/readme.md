@@ -9,3 +9,4 @@ code was tested with:
 - Python 3.8
 - numpy 1.21.4
 - opencv-python 4.5.4.60
+- PICam 5.11.2
