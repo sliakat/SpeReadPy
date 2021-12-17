@@ -79,6 +79,7 @@ class Camera(threading.Thread):
 	def __init__(self,*,libPath: str='/usr/local/lib/libpicam.so'):	#class will instantiate and initialize PICam
 		threading.Thread.__init__(self)
 		self.cam = ctypes.c_void_p(0)
+		self.dev = ctypes.c_void_p(0)
 		self.camID = camIDStruct(0,0,b'',b'')
 		self.numRows = ctypes.c_int(0)
 		self.numCols = ctypes.c_int(0)
@@ -97,7 +98,8 @@ class Camera(threading.Thread):
 	def AcquisitionUpdated(self, device, available, status):    
 		with lock:
 			if status.contents.running:				   
-				self.newestFrame = self.ProcessData(available.contents, self.rStride.value, saveAll = False)				
+				self.newestFrame = self.ProcessData(available.contents, self.rStride.value, saveAll = False)					
+		self.runningStatus = status.contents.running
 		return 0
         
 	def ResetCount(self):
@@ -196,34 +198,35 @@ class Camera(threading.Thread):
 			cv2.waitKey(20000)
 			cv2.destroyAllWindows()			
 		return np.copy(np.reshape(self.totalData,(self.counter,self.numRows,self.numCols)))
-    
-	def AcquireCB(self,*,frames: int=5):	#utilizes Advanced API to demonstrate callbacks
-		SetupDisplay(self.numRows, self.numCols, self.windowName)
-		self.ResetCount()
-		self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))
-		dev = ctypes.c_void_p(0)
-		self.picamLib.PicamAdvanced_GetCameraDevice(self.cam, ctypes.byref(dev))
-		frameCount = ctypes.c_int(0)
-		frameCount.value = frames
-		self.picamLib.Picam_SetParameterLargeIntegerValue(dev,paramFrames,frameCount)	#setting with dev handle commits to physical device if successful
-		self.totalData = np.zeros((frameCount.value,self.numRows,self.numCols))
-		CMPFUNC = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(availableData), ctypes.POINTER(acqStatus))
-		#lines for internal callback		
-		acqCallback = CMPFUNC(self.AcquisitionUpdated)
-		self.picamLib.PicamAdvanced_RegisterForAcquisitionUpdated(dev, acqCallback)
-		self.picamLib.Picam_StartAcquisition(dev)
+
+	def DisplayCameraData(self):	#this will block and then unregister callback when done
 		#do-while
 		cv2.waitKey(100)
 		self.picamLib.Picam_IsAcquisitionRunning(self.cam, ctypes.byref(self.runningStatus))
-		print('Acquisition of %d frames asynchronously started'%(frameCount.value))
 		while self.runningStatus:
-			self.picamLib.Picam_IsAcquisitionRunning(self.cam, ctypes.byref(self.runningStatus))
 			if self.display and len(self.newestFrame) > 0:									
 				DisplayImage(self.newestFrame, self.windowName)
 		print('Acquisition stopped. %d readouts obtained from callback.'%(self.counter))
-		self.picamLib.PicamAdvanced_UnregisterForAcquisitionUpdated(dev, acqCallback)
+		self.picamLib.PicamAdvanced_UnregisterForAcquisitionUpdated(self.dev, self.acqCallback)
 		cv2.waitKey(20000)
-		#cv2.destroyAllWindows()
+		cv2.destroyAllWindows()
+
+    
+	def AcquireCB(self,*,frames: int=5):	#utilizes Advanced API to demonstrate callbacks, returns immediately
+		SetupDisplay(self.numRows, self.numCols, self.windowName)
+		self.ResetCount()
+		self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))		
+		self.picamLib.PicamAdvanced_GetCameraDevice(self.cam, ctypes.byref(self.dev))
+		frameCount = ctypes.c_int(0)
+		frameCount.value = frames
+		self.picamLib.Picam_SetParameterLargeIntegerValue(self.dev,paramFrames,frameCount)	#setting with dev handle commits to physical device if successful
+		self.totalData = np.zeros((frameCount.value,self.numRows,self.numCols))
+		CMPFUNC = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(availableData), ctypes.POINTER(acqStatus))
+		#lines for internal callback		
+		self.acqCallback = CMPFUNC(self.AcquisitionUpdated)
+		self.picamLib.PicamAdvanced_RegisterForAcquisitionUpdated(self.dev, self.acqCallback)
+		self.picamLib.Picam_StartAcquisition(self.dev)		
+		print('Acquisition of %d frames asynchronously started'%(frameCount.value))		
 
 	def Close(self):
 		self.picamLib.Picam_CloseCamera(self.cam)
