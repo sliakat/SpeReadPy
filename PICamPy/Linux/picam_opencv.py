@@ -3,19 +3,19 @@
 
 import picam
 import numpy as np
+import time
 
 cam = picam.Camera()
 cam.OpenFirstCamera(model=1206)   #will open live camera if connected, otherwise opens virtual demo cam
-asynch = True
+cam.SetExposure(50)     #exposure time in ms
+asynch = True      #toggle to check the different acquisiton functions
 if asynch:
-    cam.AcquireCB(frames=100)       #asynchronously acquire with callback and preview n frames w/ opencv
-    cam.DisplayCameraData()
+    cam.AcquireCB(frames=200)       #asynchronously acquire with callback and preview n frames w/ opencv (does not save data)
 else:
-    data = cam.Acquire(frames=50)   #when acquire finishes, pressing any key or waiting 20s will exit the opencv viewer
-
+    cam.Acquire(frames=100)   #launch an acquisiton in a separate thread
+cam.DisplayCameraData()
 cam.Close()
 
-try:
-    print(np.mean(data[-1,:,:])) #total acquired data will be available as numpy array for further analysis
-except:
-    pass
+if not asynch:
+    data = cam.ReturnData()
+    print('Shape of returned data is ', np.shape(data))
