@@ -15,10 +15,11 @@ def calcParam(v,c,n):
 	return (((c)<<24)+((v)<<16)+(n))
 
 #check picam.h for parameter definitions
-paramFrames = ctypes.c_int(calcParam(6,2,40))
-paramStride = ctypes.c_int(calcParam(1,1,45))
-paramROIs = ctypes.c_int(calcParam(5, 4, 37))
-paramReadRate=ctypes.c_int(calcParam(2,1,50))
+paramFrames = ctypes.c_int(calcParam(6,2,40))	#PicamParameter_ReadoutCount
+paramStride = ctypes.c_int(calcParam(1,1,45))	#PicamParameter_ReadoutStride
+paramROIs = ctypes.c_int(calcParam(5, 4, 37))	#PicamParameter_Rois
+paramReadRate=ctypes.c_int(calcParam(2,1,50))	#PicamParameter_ReadoutRateCalculation
+paramExpose=ctypes.c_int(calcParam(2,2,23))		#PicamParameter_ExposureTime
 
 #opencv related functions
 def WindowSize(numRows,numCols):
@@ -40,7 +41,7 @@ def SetupDisplay(numRows,numCols,windowName):
 def DisplayImage(imData, windowName):		#data needs to be passed in correct shape
 	normData = cv2.normalize(imData,None,alpha=0, beta=65535, norm_type=cv2.NORM_MINMAX)
 	cv2.imshow(windowName, normData)
-	cv2.waitKey(100)	#cap opencv refresh at 10fps for stability. May be able to keep up faster on higher powered machines.
+	cv2.waitKey(50)	#cap opencv refresh at 20fps for stability. May be able to keep up faster on higher powered machines. Increase if stability issues.
 
 class camIDStruct(ctypes.Structure):
 	_fields_=[
@@ -75,9 +76,8 @@ class roisStruct(ctypes.Structure):
 		('roi_count', ctypes.c_int)]
 
 
-class Camera(threading.Thread):
+class Camera():
 	def __init__(self,*,libPath: str='/usr/local/lib/libpicam.so'):	#class will instantiate and initialize PICam
-		threading.Thread.__init__(self)
 		self.cam = ctypes.c_void_p(0)
 		self.dev = ctypes.c_void_p(0)
 		self.camID = camIDStruct(0,0,b'',b'')
@@ -93,18 +93,20 @@ class Camera(threading.Thread):
 		self.runningStatus = ctypes.c_bool(False)
 		self.windowName = ''
 		self.Initialize()
-		self.start()
 
-	def AcquisitionUpdated(self, device, available, status):    
+	def AcquisitionUpdated(self, device, available, status):    #PICam will launch callback in another thread
 		with lock:
-			if status.contents.running:				   
-				self.newestFrame = self.ProcessData(available.contents, self.rStride.value, saveAll = False)					
-		self.runningStatus = status.contents.running
+			if status.contents.running:
+				self.ProcessData(available.contents, self.rStride.value, saveAll = False)					
+			self.runningStatus = status.contents.running
 		return 0
         
 	def ResetCount(self):
 		self.counter = 0
 		self.totalData = np.array([])
+
+	def GetReadRate(self):
+		self.picamLib.Picam_GetParameterFloatingPointValue(self.cam,paramReadRate,ctypes.byref(self.readRate))
 
 	def Initialize(self):
 		initCheck = ctypes.c_bool(0)
@@ -115,7 +117,7 @@ class Camera(threading.Thread):
 	def Uninitialize(self):
 		self.picamLib.Picam_UninitializeLibrary()
 
-	def GetFirstROI(self):
+	def GetFirstROI(self):		#working with single ROI for basic demonstration
 		rois = ctypes.c_void_p(0)		
 		self.picamLib.Picam_GetParameterRoisValue(self.cam, paramROIs, ctypes.byref(rois))
 		roisCast = ctypes.cast(rois,ctypes.POINTER(roisStruct))[0]
@@ -126,7 +128,7 @@ class Camera(threading.Thread):
 		if self.numRows > 1:
 			self.display = True
 
-	def Commit(self):
+	def Commit(self,*,printMessage: bool=True):
 		paramArray = ctypes.pointer(ctypes.c_int(0))
 		failedCount = ctypes.c_int(1)
 		self.picamLib.Picam_CommitParameters(self.cam, ctypes.byref(paramArray), ctypes.byref(failedCount))
@@ -134,7 +136,9 @@ class Camera(threading.Thread):
 			print('Failed to commit %d parameters. Cannot acquire.'%(failedCount.value))
 			return False
 		else:
-			print('Commit successful!')
+			self.GetReadRate()
+			if printMessage:
+				print('\tCommit successful! Current readout rate: %0.2f readouts/sec'%(self.readRate.value))
 			return True
 
 	def OpenFirstCamera(self,*,model: int=57): #if a connected camera is found, opens the first one, otherwise opens a demo		
@@ -152,6 +156,13 @@ class Camera(threading.Thread):
 		print('\tFirst ROI: %d (cols) x %d (rows)'%(self.numCols,self.numRows))
 		self.windowName = 'Readout from %s'%(self.camID.sensor_name.decode('utf-8'))
 
+	def SetExposure(self, time):
+		expTime = ctypes.c_double(0)
+		expTime.value = time
+		self.picamLib.Picam_SetParameterFloatingPointValue(self.cam,paramExpose,expTime)
+		print('Trying to commit exposure time to %0.2f ms...'%(expTime.value),end='')
+		self.Commit(printMessage=True)
+
 	def ProcessData(self, data, readStride,*,saveAll: bool=True):
 		x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_uint16))
 		for i in range(0,data.readout_count):	#readout by readout
@@ -160,54 +171,52 @@ class Camera(threading.Thread):
 			readoutDat = np.reshape(readoutDat, (self.numRows, self.numCols))
 			if saveAll:
 				self.totalData[(self.counter),:,:] = readoutDat
-			#print(np.shape(self.totalData))
 			self.counter += 1
 			if i == data.readout_count-1:	#return most recent readout (normalized) to use for displaying
-				return readoutDat
+				self.newestFrame = readoutDat
 
-	def Acquire(self,*,frames: int=1):
+	def AcquireHelper(self):
+		dat = availableData(0,0)
+		aStatus=acqStatus(False,0,0)
+		self.picamLib.Picam_StartAcquisition(self.cam)
+		print('Acquisition Started, %0.2f readouts/sec...'%self.readRate.value)
+		#start a do-while
+		self.picamLib.Picam_WaitForAcquisitionUpdate(self.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
+		self.ProcessData(dat, self.rStride.value)
+		#while part
+		while(aStatus.running):
+			self.picamLib.Picam_WaitForAcquisitionUpdate(self.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
+			self.runningStatus = aStatus.running
+			if dat.readout_count > 0:					
+				self.ProcessData(dat, self.rStride.value)
+		#print('...Acquisiton Finished, %d readouts processed.'%(self.counter)) #is not needed since the DisplayCameraData function prints as well
+
+	def Acquire(self,*,frames: int=1):	#will launch the AcquireHelper function in a new thread when user calls it
 		frameCount = ctypes.c_int(0)
 		frameCount.value = frames
 		self.picamLib.Picam_SetParameterLargeIntegerValue(self.cam,paramFrames,frameCount)
 		if self.Commit():
 			self.ResetCount()
 			self.totalData = np.zeros((frameCount.value,self.numRows,self.numCols))
-			self.picamLib.Picam_GetParameterFloatingPointValue(self.cam,paramReadRate,ctypes.byref(self.readRate))
-			dat = availableData(0,0)
-			aStatus=acqStatus(False,0,0)
 			SetupDisplay(self.numRows, self.numCols, self.windowName)
-			self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))
-			self.picamLib.Picam_StartAcquisition(self.cam)
-			print('Acquisition Started, %0.2f readouts/sec...'%self.readRate.value)
-			#start a do-while
-			self.picamLib.Picam_WaitForAcquisitionUpdate(self.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
-			imData = self.ProcessData(dat, self.rStride.value)
-			if self.display:
-				DisplayImage(imData, self.windowName)
-			#while part
-			while(aStatus.running):
-				self.picamLib.Picam_WaitForAcquisitionUpdate(self.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
-				if dat.readout_count > 0:					
-					imData = self.ProcessData(dat, self.rStride.value)
-					if self.display:
-						DisplayImage(imData, self.windowName)
+			self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))			
+			acqThread = threading.Thread(target=self.AcquireHelper)
+			acqThread.start()	#data processing will be in a different thread than the display
 
-			print('...Acquisiton Finished, %d readouts processed.'%(self.counter))
-			if self.display:
-				print('Viewer window will close in 20 secs. You can also press key after selecting viewer to exit.')
-			cv2.waitKey(20000)
-			cv2.destroyAllWindows()			
-		return np.copy(np.reshape(self.totalData,(self.counter,self.numRows,self.numCols)))
-
-	def DisplayCameraData(self):	#this will block and then unregister callback when done
+	def DisplayCameraData(self):	#this will block and then unregister callback (if applicable) when done
 		#do-while
 		cv2.waitKey(100)
-		self.picamLib.Picam_IsAcquisitionRunning(self.cam, ctypes.byref(self.runningStatus))
+		runStatus = ctypes.c_bool(False)
+		self.picamLib.Picam_IsAcquisitionRunning(self.cam, ctypes.byref(runStatus))
+		self.runningStatus = runStatus
 		while self.runningStatus:
 			if self.display and len(self.newestFrame) > 0:									
 				DisplayImage(self.newestFrame, self.windowName)
-		print('Acquisition stopped. %d readouts obtained from callback.'%(self.counter))
-		self.picamLib.PicamAdvanced_UnregisterForAcquisitionUpdated(self.dev, self.acqCallback)
+		print('Acquisition stopped. %d readouts obtained.'%(self.counter))
+		try:
+			self.picamLib.PicamAdvanced_UnregisterForAcquisitionUpdated(self.dev, self.acqCallback)
+		except:
+			pass
 		cv2.waitKey(20000)
 		cv2.destroyAllWindows()
 
@@ -220,13 +229,15 @@ class Camera(threading.Thread):
 		frameCount = ctypes.c_int(0)
 		frameCount.value = frames
 		self.picamLib.Picam_SetParameterLargeIntegerValue(self.dev,paramFrames,frameCount)	#setting with dev handle commits to physical device if successful
-		self.totalData = np.zeros((frameCount.value,self.numRows,self.numCols))
 		CMPFUNC = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(availableData), ctypes.POINTER(acqStatus))
 		#lines for internal callback		
 		self.acqCallback = CMPFUNC(self.AcquisitionUpdated)
 		self.picamLib.PicamAdvanced_RegisterForAcquisitionUpdated(self.dev, self.acqCallback)
 		self.picamLib.Picam_StartAcquisition(self.dev)		
-		print('Acquisition of %d frames asynchronously started'%(frameCount.value))		
+		print('Acquisition of %d frames asynchronously started'%(frameCount.value))
+
+	def ReturnData(self):
+		return self.totalData
 
 	def Close(self):
 		self.picamLib.Picam_CloseCamera(self.cam)
