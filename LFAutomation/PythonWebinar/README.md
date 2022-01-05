@@ -12,4 +12,7 @@ Gain Check: <br/>
   -https://www.youtube.com/watch?v=MHig8gGPP48
   -new concepts include getting settings capabilities and ranges, looping through possible camera settings configurations.
   
+ FFT on GPU: <br/>
+  - https://www.youtube.com/watch?v=WD1y6CUfAtM
+  - GPU processing of LightField data stream using cupy and scipy libraries
  
