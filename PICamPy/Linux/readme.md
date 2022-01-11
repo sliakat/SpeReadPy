@@ -1,4 +1,4 @@
-picam.py contains the class definition for Camera, which can be instantiated and then controlled via member functions. Functions are basic and designed for demonstration.
+picam.py contains the class definition for Camera, which can be instantiated and then controlled via member functions. Functions are basic and designed for demonstration. Note that this is a work in progress and will be periodically updated.
 
 picam_opencv.py is a test script to show how the Camera class can be used to quickly open and acquire with a camera.
 
