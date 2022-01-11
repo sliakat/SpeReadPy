@@ -171,10 +171,8 @@ class AutoClass:        #object for LF automation
         self.rows = 0
         self.cols = 0
         
-    def DataToNumpy(self, imageDataSet, numFrames):
-        #find cols and rows from returned data using length of the perpecdicular slice
-        numRows = imageDataSet.GetColumn(0,0,0).GetData().Length
-        numCols = imageDataSet.GetRow(0,0,0).GetData().Length
+    def DataToNumpy(self, imageDataSet, numFrames):     #right now only works on 1 ROI
+        self.GetCurrentROI()
         dataFmt = imageDataSet.GetFrame(0,0).Format        
         dataBuf = imageDataSet.GetDataBuffer()   #.NET Array (System.Byte[])
         src_hndl = GCHandle.Alloc(dataBuf, GCHandleType.Pinned)
@@ -186,7 +184,7 @@ class AutoClass:        #object for LF automation
             resultArray = np.frombuffer(cbuf, dtype=cbuf._type_)        
         finally:        
             if src_hndl.IsAllocated: src_hndl.Free() 
-        return np.reshape(resultArray, (numFrames,numRows,numCols))
+        return np.reshape(resultArray, (numFrames,self.rows,self.cols))
     
     def GetCurrentROI(self):
         region = self.experiment.SelectedRegions
