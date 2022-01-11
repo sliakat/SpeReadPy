@@ -89,12 +89,15 @@ def experimentDataReady(sender, event_args):
                 if (LF.ReadyCheck()):
                     frames = event_args.ImageDataSet.Frames
                     counter.increase(frames)   #in case an event returns multiple frames
-                    recentFrame = LF.DataToNumpy(event_args.ImageDataSet, frames)[-1,:,:]   #[frame,row,col]
+                    recentFrame = LF.DataToNumpy(event_args.ImageDataSet)[0][-1,:,:]   #[region][frame,row,col] -- will look at most recent frame of first ROI
                     if gpuProcess:
                         gpuFFT(recentFrame)
                     else:
                         cpuFFT(recentFrame)
-                    event_args.ImageDataSet.Dispose()
+                    try:
+                        event_args.ImageDataSet.Dispose()   #in case DataToNumpy wasn't called
+                    except:
+                        pass
                     
 def initView():
     ax = disp.Axis()
@@ -163,18 +166,28 @@ class DisplayContainer:
         return self.winName
 
 class AutoClass:        #object for LF automation
+    #static class properties go here
+    dataFormat = {1:ctypes.c_ushort, 2:ctypes.c_uint, 3:ctypes.c_float}
+    byteDiv = {1:2, 2:4, 3:4}
     def __init__(self):
-        self.auto = []
-        self.experiment = []
-        self.dataFormat = {1:ctypes.c_ushort, 2:ctypes.c_uint, 3:ctypes.c_float}
-        self.byteDiv = {1:2, 2:4, 3:4}
-        self.rows = 0
-        self.cols = 0
+        self.auto = None
+        self.experiment = None
+        self.ROIs = np.array([],dtype=np.uint32)
+        self.numROIs = 0
         
-    def DataToNumpy(self, imageDataSet, numFrames):     #right now only works on 1 ROI
-        self.GetCurrentROI()
-        dataFmt = imageDataSet.GetFrame(0,0).Format        
-        dataBuf = imageDataSet.GetDataBuffer()   #.NET Array (System.Byte[])
+    def DataToNumpy(self, imageDataSet):        #output data will be a list of np arrays. Each list element corresponds to ROI. raster order [frames:rows:cols]
+        self.GetCurrentROIs()
+        outData = list()    #output data will be in a list of numpy arrays -- each list element for a region
+        dataFmt = imageDataSet.GetFrame(0,0).Format  
+        frames = imageDataSet.Frames
+        #get stride of each region
+        regions = np.zeros(self.numROIs,dtype=np.uint32)
+        for i in range(0,self.numROIs):
+            regions[i] = self.ROIs[i*2] * self.ROIs[i*2+1]
+        #start = time.perf_counter()
+        dataBuf = imageDataSet.GetDataBuffer()   #.NET vector (System.Byte[])
+        #print('GetDataBuffer function took: %0.3f s'%(time.perf_counter()-start))        
+        #convert entre .NET vector to numpy
         src_hndl = GCHandle.Alloc(dataBuf, GCHandleType.Pinned)
         try:
             src_ptr = src_hndl.AddrOfPinnedObject().ToInt64()
@@ -184,13 +197,27 @@ class AutoClass:        #object for LF automation
             resultArray = np.frombuffer(cbuf, dtype=cbuf._type_)        
         finally:        
             if src_hndl.IsAllocated: src_hndl.Free() 
-        return np.reshape(resultArray, (numFrames,self.rows,self.cols))
+        
+        #append by region
+        resultArray = np.reshape(resultArray,(frames,sum(regions)))
+        for j in range(0,self.numROIs):
+            if j == 0:
+                outData.append(np.reshape(resultArray[:,0:sum(regions[0:1])],(frames,self.ROIs[j*2],self.ROIs[j*2+1])))
+            else:
+                outData.append(np.reshape(resultArray[:,sum(regions[0:j]):sum(regions[0:j+1])],(frames,self.ROIs[j*2],self.ROIs[j*2+1])))          
+        #explicit cleanup before return
+        imageDataSet.Dispose()
+        del(dataBuf)
+        del(resultArray)        
+        return outData
     
-    def GetCurrentROI(self):
+    def GetCurrentROIs(self):
+        self.ROIs = np.array([],dtype=np.uint32)
         region = self.experiment.SelectedRegions
-        self.rows = int(region[0].Height / region[0].YBinning)
-        self.cols = int(region[0].Width / region[0].XBinning)
-        return self.rows, self.cols
+        self.numROIs = region.Length
+        for i in range(0,region.Length):
+            self.ROIs = np.append(self.ROIs,[int(region[i].Height / region[i].YBinning), int(region[i].Width / region[i].XBinning)])  #rows, cols
+        return self.ROIs
     
     def NewInstance(self,*,expName: str=''):      #loads an experiment and, if applicable, hooks event
         self.auto = Automation(True, List[String]())
@@ -222,7 +249,7 @@ class AutoClass:        #object for LF automation
         self.auto.Dispose()
         
 if __name__=="__main__":
-    gpuProcess = False
+    gpuProcess = True
     img = LatestImage()
     if gpuProcess:
         gpuStarter = threading.Thread(target=gpuInit)
@@ -230,8 +257,8 @@ if __name__=="__main__":
     LF = AutoClass()
     counter = Counter()
     LF.NewInstance(expName='Kuro2048Demo')
-    rows, cols = LF.GetCurrentROI()
-    img.SetImage(np.ones((rows,cols)))
+    #set up display for first ROI
+    img.SetImage(np.ones((LF.GetCurrentROIs()[0],LF.GetCurrentROIs()[1])))
     disp = DisplayContainer(name='FFT Animation')
     
     try:
