@@ -724,7 +724,17 @@ typedef enum PicamModel
     PicamModel_EvolveSeries              = 2900,
     PicamModel_Evolve10                  = 2901,
     PicamModel_Evolve13                  = 2902,
-    PicamModel_Evolve16                  = 2903
+    PicamModel_Evolve16                  = 2903,
+    /*------------------------------------------------------------------------*/
+    /* LANSIS Series (2711) --------------------------------------------------*/
+    /*------------------------------------------------------------------------*/
+    PicamModel_LansisSeries              = 2700,
+    /* LANSIS 261 Series -----------------------------------------------------*/
+    PicamModel_Lansis261Series           = 2701,
+    PicamModel_LansisA261BR              = 2702,
+    PicamModel_LansisW261BR              = 2703,
+    PicamModel_LansisA261BRX             = 2704,
+    PicamModel_LansisW261BRX             = 2705
     /*------------------------------------------------------------------------*/
 } PicamModel;
 /*----------------------------------------------------------------------------*/
