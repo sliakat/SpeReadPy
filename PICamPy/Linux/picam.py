@@ -7,6 +7,7 @@ import os
 import cv2
 import threading
 
+
 os.environ["GENICAM_ROOT_V2_4"] = "/opt/pleora/ebus_sdk/x86_64/lib/genicam/"	#declaration needed for Linux SDK
 
 lock = threading.Lock()
@@ -61,6 +62,11 @@ class acqStatus(ctypes.Structure):
             ('errors', ctypes.c_int),
             ('readout_rate',ctypes.c_double)]
 
+class acqBuf(ctypes.Structure):
+        _fields_=[
+            ('memory', ctypes.c_void_p),
+            ('memory_size',ctypes.c_longlong)]
+
 class roiStruct(ctypes.Structure):
 	_fields_=[
 		('x', ctypes.c_int),
@@ -92,6 +98,8 @@ class Camera():
 		self.display = False
 		self.runningStatus = ctypes.c_bool(False)
 		self.windowName = ''
+		self.circBuff = circBuff = ctypes.ARRAY(ctypes.c_ubyte,0)()
+		self.aBuf = acqBuf(0,0)
 		self.Initialize()
 
 	def AcquisitionUpdated(self, device, available, status):    #PICam will launch callback in another thread
@@ -126,7 +134,7 @@ class Camera():
 		self.numRows = int(roiCast.height/roiCast.y_binning)
 		self.picamLib.Picam_DestroyRois(rois)
 		if self.numRows > 1:
-			self.display = True
+			self.display = True		#change this back to True for opencv display
 
 	def Commit(self,*,printMessage: bool=True):
 		paramArray = ctypes.pointer(ctypes.c_int(0))
@@ -198,7 +206,8 @@ class Camera():
 		if self.Commit():
 			self.ResetCount()
 			self.totalData = np.zeros((frameCount.value,self.numRows,self.numCols))
-			SetupDisplay(self.numRows, self.numCols, self.windowName)
+			if self.display:
+				SetupDisplay(self.numRows, self.numCols, self.windowName)
 			self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))			
 			acqThread = threading.Thread(target=self.AcquireHelper)
 			acqThread.start()	#data processing will be in a different thread than the display
@@ -222,13 +231,27 @@ class Camera():
 
     
 	def AcquireCB(self,*,frames: int=5):	#utilizes Advanced API to demonstrate callbacks, returns immediately
-		SetupDisplay(self.numRows, self.numCols, self.windowName)
+		if self.display:
+			SetupDisplay(self.numRows, self.numCols, self.windowName)
 		self.ResetCount()
 		self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))		
 		self.picamLib.PicamAdvanced_GetCameraDevice(self.cam, ctypes.byref(self.dev))
 		frameCount = ctypes.c_int(0)
 		frameCount.value = frames
 		self.picamLib.Picam_SetParameterLargeIntegerValue(self.dev,paramFrames,frameCount)	#setting with dev handle commits to physical device if successful
+		#circ buffer so we can run for a long time without needing to allocate memory for all of it
+		#the buffer array and the data structure should be global or class properties so they remain in scope when the
+		#function returns		
+		widthNominal = np.floor(512*1024*1024/self.rStride.value)
+		if widthNominal < 4:					#if 512MB not enough for 4 frames, allocate for 4 frames
+			buffWidth = self.rStride.value*4
+		else:
+			buffWidth = int(widthNominal)*self.rStride.value
+		self.circBuff = ctypes.ARRAY(ctypes.c_ubyte,buffWidth)()
+		self.aBuf.memory = ctypes.addressof(self.circBuff)
+		self.aBuf.memory_size = ctypes.c_longlong(buffWidth)
+		self.picamLib.PicamAdvanced_SetAcquisitionBuffer(self.dev, ctypes.byref(self.aBuf))
+		
 		CMPFUNC = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(availableData), ctypes.POINTER(acqStatus))
 		#lines for internal callback		
 		self.acqCallback = CMPFUNC(self.AcquisitionUpdated)
