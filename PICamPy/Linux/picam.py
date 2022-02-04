@@ -121,6 +121,14 @@ class Camera():
 		self.picamLib.Picam_InitializeLibrary()
 		self.picamLib.Picam_IsLibraryInitialized(ctypes.byref(initCheck))
 		print('PICam Initialized: %r'%initCheck.value)
+		if initCheck:
+			#version check if PICam successfully initialized
+			major = ctypes.c_int(0)
+			minor = ctypes.c_int(0)
+			distribution = ctypes.c_int(0)
+			released = ctypes.c_int(0)
+			self.picamLib.Picam_GetVersion(ctypes.byref(major),ctypes.byref(minor),ctypes.byref(distribution),ctypes.byref(released))
+			print("\tVersion %d.%d.%d.%d"%(major.value, minor.value, distribution.value, released.value))
 
 	def Uninitialize(self):
 		self.picamLib.Picam_UninitializeLibrary()
