@@ -3,6 +3,14 @@ Python spe file reader, works on v2.0 (WinSpec/32) and v3.0 (LightField) version
 
 readSpe.py is the function that will load the relevant content from a given spe file.
 
+showSpeTK.py is a script that uses matplotlib w/ TK backend to visualize images.
+  -script contains main function, so can run as-is (provided you have the needed libraries and set graphics backend to Tk (%gui tk))
+    -the readSpe.py function uploaded here is needed to parse the spe data
+  -when running, tk file dialog pops up asking you to pick the file(s) you want to visualize
+  -can scroll through multi-frame images using slider widget
+  -boxes / spans can be selected for simple stats on images / line plots
+  -currently works for region of interest #0
+
 visualizeSpe.py is an example of how to load and visualize the data using pyplot
 
 showSpe.py is a function that allows the operations done in the visualizeSpe.py script to be called from another script -- 1 line gets you a plot, xml, fig handle, and WL cal (if it exists in the spe).
