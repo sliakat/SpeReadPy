@@ -73,9 +73,14 @@ def readSpe(filePath):
                 if 'Wavelength' in child.tag:
                     wavelengths=np.fromstring(child[0].text,sep=',')
                     calFlag=True
-                    totalData=dataContainer(dataList,xmlFooter=xmlFooter,wavelengths=wavelengths)
+                if 'SensorMapping' in child.tag and calFlag==True:
+                    startX = int(child.attrib['x'])
+                    xWidth = int(child.attrib['width'])
+                    wavelengths = wavelengths[startX:(startX+xWidth)]                
             if calFlag==False:
                 totalData=dataContainer(dataList,xmlFooter=xmlFooter)
+            else:
+                totalData=dataContainer(dataList,xmlFooter=xmlFooter,wavelengths=wavelengths)
             return totalData
 
         
