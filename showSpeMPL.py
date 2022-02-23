@@ -35,13 +35,14 @@ def findXPixels(wl,x1,x2):
     return x1Pix,x2Pix
     
 #callback for scale
-def update_frame(val,data,fig,ax,wave):    #pass in full data
-    global pixelAxis
+def update_frame(val,data,fig,ax,wave,name):    #pass in full data
+    global pixelAxis, currFrame
     fig.canvas.draw_idle()
-    plotData(data[int(val)-1,:,:],ax,wave,pixAxis=pixelAxis)
+    currFrame = int(val)
+    plotData(data[currFrame-1,:,:],ax,wave,name,currFrame,pixAxis=pixelAxis)
     
 
-def plotData(data,ax,wave,*,pixAxis: bool=False, xBound1: int=-1, xBound2: int=-1, yBound1: int=-1, yBound2: int=-1):     #pass in frame
+def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=-1, xBound2: int=-1, yBound1: int=-1, yBound2: int=-1):     #pass in frame
     #image contrast adjustments
     if xBound1 > 0 and xBound2 > 10 and yBound1 > 0 and yBound2 > 10:
             display_min = int(np.percentile(data[yBound1:yBound2,xBound1:xBound2].flatten(),5))
@@ -57,6 +58,7 @@ def plotData(data,ax,wave,*,pixAxis: bool=False, xBound1: int=-1, xBound2: int=-
     ax.clear()
     #plotting
     if np.size(data,0)==1:
+        ax.grid()
         if len(wave) > 10:
             ax.plot(wave,data[0])
             ax.set_xlabel('Wavelength (nm)')
@@ -75,6 +77,8 @@ def plotData(data,ax,wave,*,pixAxis: bool=False, xBound1: int=-1, xBound2: int=-
             ax.imshow(data,origin='upper',vmin=display_min,vmax=display_max,cmap='gray')
             ax.set(xlabel='Column')
         ax.set(ylabel='Row')
+    axName = '%s, Frame %d'%(name,frame)
+    ax.set_title(axName)
     plt.draw()
        
 #gets data out of spe file
@@ -109,8 +113,8 @@ def GetStats(data, x1, x2, y1, y2):
     return regMean,regDev,regMin,regMax
     
 #callback for box selection
-def box_select_callback(eclick, erelease, axis, wl):
-    global pixelAxis, autoContrast
+def box_select_callback(eclick, erelease, axis, wl, name):
+    global pixelAxis, autoContrast, currFrame
     x1, y1 = int(np.floor(eclick.xdata)), int(np.floor(eclick.ydata))
     x2, y2 = int(np.floor(erelease.xdata)), int(np.floor(erelease.ydata))
     if not pixelAxis and len(wl) > 10:
@@ -119,9 +123,9 @@ def box_select_callback(eclick, erelease, axis, wl):
     mean, dev, regMin, regMax = GetStats(data,x1,x2,y1,y2)
     statsString = 'Region Mean: %0.2f         Region Min: %0.2f\n Region Std: %0.2f         Region Max: %0.2f'%(mean,regMin,dev,regMax)    
     if autoContrast:
-        plotData(data,axis,wl,pixAxis=pixelAxis,xBound1=x1,xBound2=x2,yBound1=y1,yBound2=y2)
+        plotData(data,axis,wl,name,currFrame,pixAxis=pixelAxis,xBound1=x1,xBound2=x2,yBound1=y1,yBound2=y2)
     else:
-        plotData(data,axis,wl,pixAxis=pixelAxis)
+        plotData(data,axis,wl,name,currFrame,pixAxis=pixelAxis)
     # if x2 > 0 and y2 > 0:
     #     display_min = int(np.percentile(data[y1:y2,x1:x2].flatten(),5))
     #     display_max = int(np.percentile(data[y1:y2,x1:x2].flatten(),95))
@@ -144,8 +148,8 @@ def StatsLinePlot(xmin, xmax, axis, wl):
     plt.draw()
     
 #matplotlib widget for box selection
-def RectSelect(axis, wl):
-    return RectangleSelector(axis, lambda eclick, erelease: box_select_callback(eclick, erelease, axis, wl),
+def RectSelect(axis, wl, name):
+    return RectangleSelector(axis, lambda eclick, erelease: box_select_callback(eclick, erelease, axis, wl, name),
                                        drawtype='box', useblit=True,
                                        button=[1, 3],  # disable middle button
                                        minspanx=10, minspany=10,
@@ -153,12 +157,12 @@ def RectSelect(axis, wl):
                                        interactive=True)
 
 #matplotlib widget for line selection
-def SpanSelect(axis,wl):
+def SpanSelect(axis,wl,name):
     return SpanSelector(axis, lambda xmin, xmax: StatsLinePlot(xmin, xmax, axis, wl), 'horizontal', span_stays=True)
 
 def SliderGen(axis,maximum):
     fp = axis.get_position()        #get position of the figure
-    axvert = plt.axes([fp.x0-0.05, fp.y0, 0.0225, 0.75])
+    axvert = plt.axes([fp.x0-0.08, fp.y0, 0.0225, 0.75])
     return Slider(ax=axvert,label='%d Total Frames'%(maximum), valmin=1, valmax=maximum, valinit=1, orientation="vertical", valstep=range(1, maximum+1))
 
 #parse xml for experiment info
@@ -180,7 +184,7 @@ if __name__=="__main__":
     #these objects append to keep data in scope in case they are needed w/ interactive console, labeling them *Total to distinguish    
     dataTotal = Container()
     xmlTotal = Container()
-    xmlFormat = Container()
+    xmlFormat = list()
     figTotal = Container()
     axTotal = Container()
     wlTotal = Container()
@@ -191,7 +195,8 @@ if __name__=="__main__":
     
     #globals
     pixelAxis = False
-    autoContrast = False
+    autoContrast = True
+    currFrame = 1
     
     #use tk for file dialog
     root = tk.Tk()
@@ -202,25 +207,26 @@ if __name__=="__main__":
                                     #for comparison of multiple images, open each in separate kernel
         nameSplit = (filenames[i].rsplit('/',maxsplit=1)[1]).rsplit(r'.',maxsplit=1)[0]     #'/' for tk, '\\' for System.Windows.Forms        
         figTotal.Add(plt.figure(nameSplit))
+        #figTotal.Get(i).set_tight_layout(True)
         d,x,w = parseSpe(filenames[i])
         #append lists
         dataTotal.Add(d)
         framesMax = np.size(dataTotal.Get(i),axis=0)
         xmlTotal.Add(x)
         try:
-            xmlFormat.Add(dom.parseString(xmlTotal.Get(i)).toprettyxml())
+            xmlFormat.append(dom.parseString(xmlTotal.Get(i)).toprettyxml())
         except:
             pass
         wlTotal.Add(w)
-        axTotal.Add(figTotal.Get(i).add_subplot(111))        
+        axTotal.Add(figTotal.Get(i).add_subplot(111))              
         MPSliderTotal.Add(SliderGen(axTotal.Get(i),framesMax))        
-        plotData(dataTotal.Get(i)[0,:,:],axTotal.Get(i),wlTotal.Get(i),pixAxis=pixelAxis)
+        plotData(dataTotal.Get(i)[0,:,:],axTotal.Get(i),wlTotal.Get(i),nameSplit,currFrame,pixAxis=pixelAxis)        
         #register slider to callback
-        MPSliderConnect.Add(MPSliderTotal.Get(i).on_changed((lambda val: update_frame(val,dataTotal.Get(i),figTotal.Get(i),axTotal.Get(i),wlTotal.Get(i)))))
+        MPSliderConnect.Add(MPSliderTotal.Get(i).on_changed((lambda val: update_frame(val,dataTotal.Get(i),figTotal.Get(i),axTotal.Get(i),wlTotal.Get(i),nameSplit))))
         #MPSliderTotal.Get(i).on_changed(update_frame)
         #rectangle / span selectors
         if np.size(dataTotal.Get(i),1)>1:
-            RSTotal.Add(RectSelect(axTotal.Get(i),wlTotal.Get(i)))
+            RSTotal.Add(RectSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))
         else:
-            SSTotal.Add(SpanSelect(axTotal.Get(i),wlTotal.Get(i)))
+            SSTotal.Add(SpanSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))
         FindXmlElems(xmlTotal.Get(i),['exposuretime','gain','speed','qual','background','reading','portsused','width','gate','pulse'])
