@@ -71,7 +71,13 @@ def readSpe(filePath):
             calFlag=False                
             for child in xmlRoot[1]:
                 if 'Wavelength' in child.tag:
-                    wavelengths=np.fromstring(child[0].text,sep=',')
+                    if 'Error' in child[0].tag:     #handle the case where errors are reported in pair with the WL
+                        wavelengths = np.array([])
+                        wlText = child[0].text.rsplit()
+                        for elem in wlText:
+                            wavelengths = np.append(wavelengths,np.fromstring(elem,sep=',')[0])
+                    else:
+                        wavelengths=np.fromstring(child[0].text,sep=',')
                     calFlag=True
                 if 'SensorMapping' in child.tag and calFlag==True:
                     startX = int(child.attrib['x'])
