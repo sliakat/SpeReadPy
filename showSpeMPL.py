@@ -282,8 +282,12 @@ def PrintSelectedXmlEntries(xmlStr):
                                                         print('Readout Mode:\t\t%s'%(child5.text))
                                                     if 'Time'.casefold() in child5.tag.casefold():
                                                         print('Readout Time:\t\t%0.3f ms'%(np.float32(child5.text)))
+                                                    if 'StorageShiftRate'.casefold() in child5.tag.casefold():
+                                                        if child5.get('relevance') != 'False':
+                                                            print('Storage Shift:\t\t%sus'%(child5.text))
                                                     if 'VerticalShiftRate'.casefold() in child5.tag.casefold():
-                                                        print('Vertical Shift:\t\t%sus'%(child5.text))
+                                                        if child5.get('relevance') != 'False':
+                                                            print('Vertical Shift:\t\t%sus'%(child5.text))
                                                     if 'PortsUsed'.casefold() in child5.tag.casefold():
                                                         print('Ports Used:\t\t\t%s'%(child5.text))
                                             if 'HardwareIO'.casefold() in child4.tag.casefold():
