@@ -127,7 +127,7 @@ def box_select_callback(eclick, erelease, axis, wl, name):
         x1, x2 = findXPixels(wl, x1, x2)
     data = np.array(axis.get_images().pop()._A)
     mean, dev, regMin, regMax = GetStats(data,x1,x2,y1,y2)
-    statsString = 'Region Mean: %0.2f         Region Min: %0.2f\n Region Std: %0.2f         Region Max: %0.2f'%(mean,regMin,dev,regMax)    
+    statsString = 'Region Mean: %0.2f          Region Min: %0.2f\nRegion Std: %0.2f          Region Max: %0.2f\nMin/Mean Ratio: %0.3f'%(mean,regMin,dev,regMax,(regMin/mean))    
     if autoContrast:
         plotData(data,axis,wl,name,currFrame,pixAxis=pixelAxis,xBound1=x1,xBound2=x2,yBound1=y1,yBound2=y2)
     else:
@@ -186,9 +186,9 @@ def FindXmlElems(xmlStr, stringList):
                     print('%s:\t\t%s\t\t%s'%(tagSplit, elem.attrib, elem.text))
         print('\n\n')
         
-def PrintSelectedXmlEntries(xmlStr):
-    xmlRoot = ET.fromstring(xmlStr)
+def PrintSelectedXmlEntries(xmlStr):    
     if len(xmlStr)>50:
+        xmlRoot = ET.fromstring(xmlStr)
         #find DataHistories
         for child in xmlRoot:
             if 'DataHistories'.casefold() in child.tag.casefold():
@@ -225,6 +225,14 @@ def PrintSelectedXmlEntries(xmlStr):
                                                                 print('Temperature:\t\t%sC, Status: '%(child6.text),end='')
                                                             if ('Status'.casefold() in child6.tag.casefold()) and ('CoolingFanStatus'.casefold() not in child6.tag.casefold()):
                                                                 print('%s'%(child6.text))
+                                                    if 'Cleaning'.casefold() in child5.tag.casefold():
+                                                        for child6 in child5:
+                                                            if 'CleanSerialRegister'.casefold() in child6.tag.casefold():
+                                                                if child6.get('relevance') != 'False':
+                                                                    print('Clean Serial Reg:\t%s'%(child6.text))
+                                                            if 'CleanUntilTrigger'.casefold() in child6.tag.casefold():
+                                                                if child6.get('relevance') != 'False':
+                                                                    print('Clean Until Trig:\t%s'%(child6.text))
                                             if 'ShutterTiming'.casefold() in child4.tag.casefold():
                                                 for child5 in child4:
                                                     if 'ExposureTime'.casefold() in child5.tag.casefold():
