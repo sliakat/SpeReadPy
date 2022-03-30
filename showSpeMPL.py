@@ -86,6 +86,27 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
     axName = '%s, Frame %d'%(name,frame)
     ax.set_title(axName)
     plt.draw()
+
+def ParseXmlForRegion(xmlStr, region):
+    startX = -1
+    width = -1
+    if len(xmlStr)>50:
+        xmlRoot = ET.fromstring(xmlStr)
+        #find DataHistories
+        for child in xmlRoot:
+            if 'Calibrations'.casefold() in child.tag.casefold():
+                counter = 0
+                for child1 in child:                    
+                    if 'SensorMapping'.casefold() in child1.tag.casefold():
+                        if counter == region:
+                            startX = np.int32(child1.get('x'))
+                            width = np.int32(child1.get('width'))
+                            xbin = np.int32(child1.get('xBinning'))
+                            width = np.int32(width / xbin)
+                            break
+                        else:
+                            counter += 1
+    return startX, width
        
 #gets data out of spe file
 def parseSpe(filename,*,region: int=0, suppress: bool=True):    
@@ -99,7 +120,12 @@ def parseSpe(filename,*,region: int=0, suppress: bool=True):
         if not suppress:
             print('No wavelength calibration in spe.')            
     dataList = totalData.data
-    data = dataList[region]    
+    data = dataList[region]
+    if len(wavelengths) > 2:
+        startX, width = ParseXmlForRegion(xmlFooter,region)
+        if startX > -1 and width > 0:
+            wavelengths = wavelengths[startX:(startX+width)]
+    print('%d ROIs in this spe file, showing ROI %d'%(len(dataList),region+1))
     return (data, xmlFooter, wavelengths)
 
 #display helpers
@@ -192,220 +218,226 @@ def PrintSelectedXmlEntries(xmlStr):
         #find DataHistories
         for child in xmlRoot:
             if 'DataHistories'.casefold() in child.tag.casefold():
-                for child1 in child[0][0][0]:
-                    if 'System'.casefold() in child1.tag.casefold():
+                for child1 in child:
+                    if 'DataHistory'.casefold() in child1.tag.casefold():
                         for child2 in child1:
-                            if 'Cameras'.casefold() in child2.tag.casefold():
+                            if 'Origin'.casefold() in child2.tag.casefold():
                                 for child3 in child2:
-                                    if 'Camera'.casefold() in child3.tag.casefold():
-                                        print('Camera model: %s\n\tSN: %s'%(child3.get('model'),child3.get('serialNumber')))
-                            if 'Spectrometers'.casefold() in child2.tag.casefold():
-                                for child3 in child2:
-                                    if 'Spectrometer'.casefold() in child3.tag.casefold():
-                                        print('Spectrograph model: %s\n\tSN: %s'%(child3.get('model'),child3.get('serialNumber')))
-                    if 'Devices'.casefold() in child1.tag.casefold():
-                        for child2 in child1:
-                            if 'Cameras'.casefold() in child2.tag.casefold():
-                                for child3 in child2:
-                                    if 'Camera'.casefold() in child3.tag.casefold():
+                                    if 'Experiment'.casefold() in child3.tag.casefold():
                                         for child4 in child3:
-                                            if 'Sensor'.casefold() in child4.tag.casefold():
-                                                for child5 in child4:
-                                                    if 'Information'.casefold() in child5.tag.casefold():
-                                                        for child6 in child5:
-                                                            if 'SensorName'.casefold() in child6.tag.casefold():
-                                                                print('Camera sensor:\t\t%s'%(child6.text))
-                                                            if 'Pixel'.casefold() in child6.tag.casefold():
-                                                                for child7 in child6:
-                                                                    if ('Width'.casefold() in child7.tag.casefold()) and ('GapWidth'.casefold() not in child7.tag.casefold()):
-                                                                        print('Pixel width:\t\t%sum'%(child7.text))
-                                                    if 'Temperature'.casefold() in child5.tag.casefold():
-                                                        for child6 in child5:
-                                                            if 'Reading'.casefold() in child6.tag.casefold():
-                                                                print('Temperature:\t\t%sC, Status: '%(child6.text),end='')
-                                                            if ('Status'.casefold() in child6.tag.casefold()) and ('CoolingFanStatus'.casefold() not in child6.tag.casefold()):
-                                                                print('%s'%(child6.text))
-                                                    if 'Cleaning'.casefold() in child5.tag.casefold():
-                                                        for child6 in child5:
-                                                            if 'CleanSerialRegister'.casefold() in child6.tag.casefold():
-                                                                if child6.get('relevance') != 'False':
-                                                                    print('Clean Serial Reg:\t%s'%(child6.text))
-                                                            if 'CleanUntilTrigger'.casefold() in child6.tag.casefold():
-                                                                if child6.get('relevance') != 'False':
-                                                                    print('Clean Until Trig:\t%s'%(child6.text))
-                                            if 'ShutterTiming'.casefold() in child4.tag.casefold():
-                                                for child5 in child4:
-                                                    if 'ExposureTime'.casefold() in child5.tag.casefold():
-                                                        print('Exposure Time:\t\t%s ms'%(child5.text))
-                                                    if 'Mode'.casefold() in child5.tag.casefold():
-                                                        print('Shutter Mode:\t\t%s'%(child5.text))
-                                            if 'Gating'.casefold() in child4.tag.casefold():
-                                                gateMode = ''
-                                                startDelay = 0
-                                                endDelay = 0
-                                                startWidth = 0
-                                                endWidth = 0
-                                                for child5 in child4:
-                                                    if 'Mode'.casefold() in child5.tag.casefold():
-                                                        gateMode = child5.text
-                                                    if 'RepetitiveGate'.casefold() in child5.tag.casefold():
-                                                        if child5.get('relevance') != 'False':
-                                                            for child6 in child5:
-                                                                if 'Pulse'.casefold() in child6.tag.casefold():
-                                                                    startWidth = np.float64(child6.get('width'))
-                                                                    startDelay = np.float64(child6.get('delay'))
-                                                    if 'Sequential'.casefold() in child5.tag.casefold():
-                                                        for child6 in child5:
-                                                            if 'StartingGate'.casefold() in child6.tag.casefold():
-                                                                for child7 in child6:
-                                                                    if 'Pulse'.casefold() in child7.tag.casefold():
-                                                                        startWidth = np.float64(child7.get('width'))
-                                                                        startDelay = np.float64(child7.get('delay'))
-                                                            if 'EndingGate'.casefold() in child6.tag.casefold():
-                                                                for child7 in child6:
-                                                                    if 'Pulse'.casefold() in child7.tag.casefold():
-                                                                        endWidth = np.float64(child7.get('width'))
-                                                                        endDelay = np.float64(child7.get('delay'))                                                                    
-                                                if gateMode == 'Repetitive':
-                                                    print('Gating:\t\t\t\t%s\nGate Width:\t\t\t%0.3f ns\nGate Delay:\t\t\t%0.3f ns'%(gateMode,startWidth,startDelay))
-                                                if gateMode == 'Sequential':
-                                                    print('Gating:\t\t\t\t%s\nStart Width:\t\t%0.3f ns\nStart Delay:\t\t%0.3f ns\nEnd Width:\t\t\t%0.3f ns\nEnd Delay:\t\t\t%0.3f ns'
-                                                          %(gateMode,startWidth,startDelay,endWidth,endDelay))
-                                            if 'Intensifier'.casefold() in child4.tag.casefold():
-                                                for child5 in child4:
-                                                    if 'Gain'.casefold() in child5.tag.casefold():
-                                                        if child5.get('relevance') != 'False':
-                                                            print('Intensifier Gain:\t%sx'%(child5.text))
-                                                    if 'Status'.casefold() in child5.tag.casefold():
-                                                        print('Intensifier Status:\t%s'%(child5.text))
-                                                    if 'EMIccd'.casefold() in child5.tag.casefold():
-                                                        for child6 in child5:
-                                                            if ('Gain'.casefold() in child6.tag.casefold()) and ('GainControlMode'.casefold() not in child6.tag.casefold()):
-                                                                if child6.get('relevance') != 'False':
-                                                                    print('EMI Gain:\t\t\t%sx'%(child6.text))
-                                                        
-                                            if 'ReadoutControl'.casefold() in child4.tag.casefold():
-                                                for child5 in child4:
-                                                    if 'Mode'.casefold() in child5.tag.casefold():
-                                                        print('Readout Mode:\t\t%s'%(child5.text))
-                                                    if 'Time'.casefold() in child5.tag.casefold():
-                                                        print('Readout Time:\t\t%0.3f ms'%(np.float32(child5.text)))
-                                                    if 'StorageShiftRate'.casefold() in child5.tag.casefold():
-                                                        if child5.get('relevance') != 'False':
-                                                            print('Storage Shift:\t\t%sus'%(child5.text))
-                                                    if 'VerticalShiftRate'.casefold() in child5.tag.casefold():
-                                                        if child5.get('relevance') != 'False':
-                                                            print('Vertical Shift:\t\t%sus'%(child5.text))
-                                                    if 'PortsUsed'.casefold() in child5.tag.casefold():
-                                                        print('Ports Used:\t\t\t%s'%(child5.text))
-                                            if 'HardwareIO'.casefold() in child4.tag.casefold():
-                                                for child5 in child4:                                                    
-                                                    if 'Trigger'.casefold() in child5.tag.casefold():
-                                                        triggerMode = ''
-                                                        triggerFreq = 0
-                                                        for child6 in child5:
-                                                            if 'Frequency'.casefold() in child6.tag.casefold():
-                                                                triggerFreq = np.float64(child6.text)
-                                                            if 'Source'.casefold() in child6.tag.casefold():
-                                                                triggerMode = child6.text
-                                                        if triggerMode == "Internal":
-                                                            print('Trigger:\t\t\tInternal, %0.3f Hz'%(triggerFreq))
-                                            if 'Adc'.casefold() in child4.tag.casefold():
-                                                for child5 in child4:
-                                                    if 'Speed'.casefold() in child5.tag.casefold():
-                                                        if child5.get('relevance') != 'False':
-                                                            print('ADC Speed:\t\t\t%s MHz'%(child5.text))
-                                                    if 'AnalogGain'.casefold() in child5.tag.casefold():
-                                                        if child5.get('relevance') != 'False':
-                                                            print('Analog Gain:\t\t%s'%(child5.text))
-                                                    if 'EMGain'.casefold() in child5.tag.casefold():
-                                                        if child5.get('relevance') != 'False':
-                                                            print('EM Gain:\t\t\t%sx'%(child5.text))
-                                                    if 'Quality'.casefold() in child5.tag.casefold():
-                                                        print('ADC Quality:\t\t%s'%(child5.text))
-                                                    if 'CorrectPixelBias'.casefold() in child5.tag.casefold():
-                                                        print('PBC On?:\t\t\t%s'%(child5.text))
-                                            if 'Acquisition'.casefold() in child4.tag.casefold():
-                                                for child5 in child4:
-                                                    if 'FrameRate'.casefold() in child5.tag.casefold():
-                                                        print('Frame Rate:\t\t\t%0.3f fps'%(np.float32(child5.text)))
-                                            if 'Experiment'.casefold() in child4.tag.casefold():
-                                                for child5 in child4:
-                                                    if 'OnlineProcessing'.casefold() in child5.tag.casefold():
-                                                        for child6 in child5:
-                                                            if 'FrameCombination'.casefold() in child6.tag.casefold():
-                                                                isCombined = True
-                                                                method = ''
-                                                                framesCombined = 1
-                                                                for child7 in child6:
-                                                                    if 'Method'.casefold() in child7.tag.casefold():
-                                                                        if child7.get('relevance') == 'False': #if relevance is there, that means it's false
-                                                                            isCombined = False
-                                                                        method = child7.text
-                                                                    if 'FramesCombined'.casefold() in child7.tag.casefold():
-                                                                        framesCombined = np.int64(child7.text)
-                                                                if isCombined:
-                                                                    print('Frame Combination:\t%s of %d frames.'%(method,framesCombined))
-                                                    if 'OnlineCorrections'.casefold() in child5.tag.casefold():
-                                                        correctionList = []
-                                                        for child6 in child5:
-                                                            if 'OrientationCorrection'.casefold() in child6.tag.casefold():
-                                                                for child7 in child6:
-                                                                    if 'Enabled'.casefold() in child7.tag.casefold():
-                                                                        if child7.text == 'True':
-                                                                            correctionList.append('Orientation')
-                                                            if 'BlemishCorrection'.casefold() in child6.tag.casefold():
-                                                                for child7 in child6:
-                                                                    if 'Enabled'.casefold() in child7.tag.casefold():
-                                                                        if child7.text == 'True':
-                                                                            correctionList.append('Blemish')
-                                                            if 'BackgroundCorrection'.casefold() in child6.tag.casefold():
-                                                                for child7 in child6:
-                                                                    if 'Enabled'.casefold() in child7.tag.casefold():
-                                                                        if child7.text == 'True':
-                                                                            correctionList.append('Background')
-                                                            if 'FlatfieldCorrection'.casefold() in child6.tag.casefold():
-                                                                for child7 in child6:
-                                                                    if 'Enabled'.casefold() in child7.tag.casefold():
-                                                                        if child7.text == 'True':
-                                                                            correctionList.append('Flatfield')
-                                                            if 'CosmicRayCorrection'.casefold() in child6.tag.casefold():
-                                                                for child7 in child6:
-                                                                    if 'Enabled'.casefold() in child7.tag.casefold():
-                                                                        if child7.text == 'True':
-                                                                            correctionList.append('Cosmic')
-                                                        if len(correctionList) > 0:
-                                                            print('Correction(s):\t\t',end='')
-                                                            for i in range(0,len(correctionList)):
-                                                                print('%s'%(correctionList[i]),end='')
-                                                                if i <len(correctionList)-1:
-                                                                    print(', ',end='')
-                                                            print('')
-                            if 'Spectrometers'.casefold() in child2.tag.casefold():                                
-                                for child3 in child2:
-                                    if 'Spectrometer'.casefold() in child3.tag.casefold():
-                                        for child4 in child3:
-                                            if 'Grating'.casefold() in child4.tag.casefold():
-                                                for child5 in child4:
-                                                    if 'Selected'.casefold() in child5.tag.casefold():
-                                                        print('Grating:\t\t\t%s'%(child5.text),end='')
-                                                    if 'CenterWavelength'.casefold() in child5.tag.casefold():
-                                                        print(', CWL: %0.3f nm'%(np.float64(child5.text)))
-                                            if 'Experiment'.casefold() in child4.tag.casefold():
-                                                for child5 in child4:
-                                                    if 'StepAndGlue'.casefold() in child5.tag.casefold():
-                                                        startWL = 0
-                                                        endWL = 0
-                                                        enabled = ''
-                                                        for child6 in child5:
-                                                            if 'Enabled'.casefold() in child6.tag.casefold():
-                                                                enabled = child6.text
-                                                            if 'StartingWavelength'.casefold() in child6.tag.casefold():
-                                                                startWL = np.float64(child6.text)
-                                                            if 'EndingWavelength'.casefold() in child6.tag.casefold():
-                                                                endWL = np.float64(child6.text)
-                                                        if enabled == 'True':
-                                                            print('Step and Glue:\t\t%0.3f nm to %0.3f nm'%(startWL,endWL))
+                                            if 'System'.casefold() in child4.tag.casefold():
+                                                for child2 in child4:
+                                                    if 'Cameras'.casefold() in child2.tag.casefold():
+                                                        for child3 in child2:
+                                                            if 'Camera'.casefold() in child3.tag.casefold():
+                                                                print('Camera model: %s\n\tSN: %s'%(child3.get('model'),child3.get('serialNumber')))
+                                                    if 'Spectrometers'.casefold() in child2.tag.casefold():
+                                                        for child3 in child2:
+                                                            if 'Spectrometer'.casefold() in child3.tag.casefold():
+                                                                print('Spectrograph model: %s\n\tSN: %s'%(child3.get('model'),child3.get('serialNumber')))
+                                            if 'Devices'.casefold() in child4.tag.casefold():
+                                                for child2 in child4:
+                                                    if 'Cameras'.casefold() in child2.tag.casefold():
+                                                        for child3 in child2:
+                                                            if 'Camera'.casefold() in child3.tag.casefold():
+                                                                for child4 in child3:
+                                                                    if 'Sensor'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'Information'.casefold() in child5.tag.casefold():
+                                                                                for child6 in child5:
+                                                                                    if 'SensorName'.casefold() in child6.tag.casefold():
+                                                                                        print('Camera sensor:\t\t%s'%(child6.text))
+                                                                                    if 'Pixel'.casefold() in child6.tag.casefold():
+                                                                                        for child7 in child6:
+                                                                                            if ('Width'.casefold() in child7.tag.casefold()) and ('GapWidth'.casefold() not in child7.tag.casefold()):
+                                                                                                print('Pixel width:\t\t%sum'%(child7.text))
+                                                                            if 'Temperature'.casefold() in child5.tag.casefold():
+                                                                                for child6 in child5:
+                                                                                    if 'Reading'.casefold() in child6.tag.casefold():
+                                                                                        print('Temperature:\t\t%sC, Status: '%(child6.text),end='')
+                                                                                    if ('Status'.casefold() in child6.tag.casefold()) and ('CoolingFanStatus'.casefold() not in child6.tag.casefold()):
+                                                                                        print('%s'%(child6.text))
+                                                                            if 'Cleaning'.casefold() in child5.tag.casefold():
+                                                                                for child6 in child5:
+                                                                                    if 'CleanSerialRegister'.casefold() in child6.tag.casefold():
+                                                                                        if child6.get('relevance') != 'False':
+                                                                                            print('Clean Serial Reg:\t%s'%(child6.text))
+                                                                                    if 'CleanUntilTrigger'.casefold() in child6.tag.casefold():
+                                                                                        if child6.get('relevance') != 'False':
+                                                                                            print('Clean Until Trig:\t%s'%(child6.text))
+                                                                    if 'ShutterTiming'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'ExposureTime'.casefold() in child5.tag.casefold():
+                                                                                print('Exposure Time:\t\t%s ms'%(child5.text))
+                                                                            if 'Mode'.casefold() in child5.tag.casefold():
+                                                                                print('Shutter Mode:\t\t%s'%(child5.text))
+                                                                    if 'Gating'.casefold() in child4.tag.casefold():
+                                                                        gateMode = ''
+                                                                        startDelay = 0
+                                                                        endDelay = 0
+                                                                        startWidth = 0
+                                                                        endWidth = 0
+                                                                        for child5 in child4:
+                                                                            if 'Mode'.casefold() in child5.tag.casefold():
+                                                                                gateMode = child5.text
+                                                                            if 'RepetitiveGate'.casefold() in child5.tag.casefold():
+                                                                                if child5.get('relevance') != 'False':
+                                                                                    for child6 in child5:
+                                                                                        if 'Pulse'.casefold() in child6.tag.casefold():
+                                                                                            startWidth = np.float64(child6.get('width'))
+                                                                                            startDelay = np.float64(child6.get('delay'))
+                                                                            if 'Sequential'.casefold() in child5.tag.casefold():
+                                                                                for child6 in child5:
+                                                                                    if 'StartingGate'.casefold() in child6.tag.casefold():
+                                                                                        for child7 in child6:
+                                                                                            if 'Pulse'.casefold() in child7.tag.casefold():
+                                                                                                startWidth = np.float64(child7.get('width'))
+                                                                                                startDelay = np.float64(child7.get('delay'))
+                                                                                    if 'EndingGate'.casefold() in child6.tag.casefold():
+                                                                                        for child7 in child6:
+                                                                                            if 'Pulse'.casefold() in child7.tag.casefold():
+                                                                                                endWidth = np.float64(child7.get('width'))
+                                                                                                endDelay = np.float64(child7.get('delay'))                                                                    
+                                                                        if gateMode == 'Repetitive':
+                                                                            print('Gating:\t\t\t\t%s\nGate Width:\t\t\t%0.3f ns\nGate Delay:\t\t\t%0.3f ns'%(gateMode,startWidth,startDelay))
+                                                                        if gateMode == 'Sequential':
+                                                                            print('Gating:\t\t\t\t%s\nStart Width:\t\t%0.3f ns\nStart Delay:\t\t%0.3f ns\nEnd Width:\t\t\t%0.3f ns\nEnd Delay:\t\t\t%0.3f ns'
+                                                                                  %(gateMode,startWidth,startDelay,endWidth,endDelay))
+                                                                    if 'Intensifier'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'Gain'.casefold() in child5.tag.casefold():
+                                                                                if child5.get('relevance') != 'False':
+                                                                                    print('Intensifier Gain:\t%sx'%(child5.text))
+                                                                            if 'Status'.casefold() in child5.tag.casefold():
+                                                                                print('Intensifier Status:\t%s'%(child5.text))
+                                                                            if 'EMIccd'.casefold() in child5.tag.casefold():
+                                                                                for child6 in child5:
+                                                                                    if ('Gain'.casefold() in child6.tag.casefold()) and ('GainControlMode'.casefold() not in child6.tag.casefold()):
+                                                                                        if child6.get('relevance') != 'False':
+                                                                                            print('EMI Gain:\t\t\t%sx'%(child6.text))
+                                                                                
+                                                                    if 'ReadoutControl'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'Mode'.casefold() in child5.tag.casefold():
+                                                                                print('Readout Mode:\t\t%s'%(child5.text))
+                                                                            if 'Time'.casefold() in child5.tag.casefold():
+                                                                                print('Readout Time:\t\t%0.3f ms'%(np.float32(child5.text)))
+                                                                            if 'StorageShiftRate'.casefold() in child5.tag.casefold():
+                                                                                if child5.get('relevance') != 'False':
+                                                                                    print('Storage Shift:\t\t%sus'%(child5.text))
+                                                                            if 'VerticalShiftRate'.casefold() in child5.tag.casefold():
+                                                                                if child5.get('relevance') != 'False':
+                                                                                    print('Vertical Shift:\t\t%sus'%(child5.text))
+                                                                            if 'PortsUsed'.casefold() in child5.tag.casefold():
+                                                                                print('Ports Used:\t\t\t%s'%(child5.text))
+                                                                    if 'HardwareIO'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:                                                    
+                                                                            if 'Trigger'.casefold() in child5.tag.casefold():
+                                                                                triggerMode = ''
+                                                                                triggerFreq = 0
+                                                                                for child6 in child5:
+                                                                                    if 'Frequency'.casefold() in child6.tag.casefold():
+                                                                                        triggerFreq = np.float64(child6.text)
+                                                                                    if 'Source'.casefold() in child6.tag.casefold():
+                                                                                        triggerMode = child6.text
+                                                                                if triggerMode == "Internal":
+                                                                                    print('Trigger:\t\t\tInternal, %0.3f Hz'%(triggerFreq))
+                                                                    if 'Adc'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'Speed'.casefold() in child5.tag.casefold():
+                                                                                if child5.get('relevance') != 'False':
+                                                                                    print('ADC Speed:\t\t\t%s MHz'%(child5.text))
+                                                                            if 'AnalogGain'.casefold() in child5.tag.casefold():
+                                                                                if child5.get('relevance') != 'False':
+                                                                                    print('Analog Gain:\t\t%s'%(child5.text))
+                                                                            if 'EMGain'.casefold() in child5.tag.casefold():
+                                                                                if child5.get('relevance') != 'False':
+                                                                                    print('EM Gain:\t\t\t%sx'%(child5.text))
+                                                                            if 'Quality'.casefold() in child5.tag.casefold():
+                                                                                print('ADC Quality:\t\t%s'%(child5.text))
+                                                                            if 'CorrectPixelBias'.casefold() in child5.tag.casefold():
+                                                                                print('PBC On?:\t\t\t%s'%(child5.text))
+                                                                    if 'Acquisition'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'FrameRate'.casefold() in child5.tag.casefold():
+                                                                                print('Frame Rate:\t\t\t%0.3f fps'%(np.float32(child5.text)))
+                                                                    if 'Experiment'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'OnlineProcessing'.casefold() in child5.tag.casefold():
+                                                                                for child6 in child5:
+                                                                                    if 'FrameCombination'.casefold() in child6.tag.casefold():
+                                                                                        isCombined = True
+                                                                                        method = ''
+                                                                                        framesCombined = 1
+                                                                                        for child7 in child6:
+                                                                                            if 'Method'.casefold() in child7.tag.casefold():
+                                                                                                if child7.get('relevance') == 'False': #if relevance is there, that means it's false
+                                                                                                    isCombined = False
+                                                                                                method = child7.text
+                                                                                            if 'FramesCombined'.casefold() in child7.tag.casefold():
+                                                                                                framesCombined = np.int64(child7.text)
+                                                                                        if isCombined:
+                                                                                            print('Frame Combination:\t%s of %d frames.'%(method,framesCombined))
+                                                                            if 'OnlineCorrections'.casefold() in child5.tag.casefold():
+                                                                                correctionList = []
+                                                                                for child6 in child5:
+                                                                                    if 'OrientationCorrection'.casefold() in child6.tag.casefold():
+                                                                                        for child7 in child6:
+                                                                                            if 'Enabled'.casefold() in child7.tag.casefold():
+                                                                                                if child7.text == 'True':
+                                                                                                    correctionList.append('Orientation')
+                                                                                    if 'BlemishCorrection'.casefold() in child6.tag.casefold():
+                                                                                        for child7 in child6:
+                                                                                            if 'Enabled'.casefold() in child7.tag.casefold():
+                                                                                                if child7.text == 'True':
+                                                                                                    correctionList.append('Blemish')
+                                                                                    if 'BackgroundCorrection'.casefold() in child6.tag.casefold():
+                                                                                        for child7 in child6:
+                                                                                            if 'Enabled'.casefold() in child7.tag.casefold():
+                                                                                                if child7.text == 'True':
+                                                                                                    correctionList.append('Background')
+                                                                                    if 'FlatfieldCorrection'.casefold() in child6.tag.casefold():
+                                                                                        for child7 in child6:
+                                                                                            if 'Enabled'.casefold() in child7.tag.casefold():
+                                                                                                if child7.text == 'True':
+                                                                                                    correctionList.append('Flatfield')
+                                                                                    if 'CosmicRayCorrection'.casefold() in child6.tag.casefold():
+                                                                                        for child7 in child6:
+                                                                                            if 'Enabled'.casefold() in child7.tag.casefold():
+                                                                                                if child7.text == 'True':
+                                                                                                    correctionList.append('Cosmic')
+                                                                                if len(correctionList) > 0:
+                                                                                    print('Correction(s):\t\t',end='')
+                                                                                    for i in range(0,len(correctionList)):
+                                                                                        print('%s'%(correctionList[i]),end='')
+                                                                                        if i <len(correctionList)-1:
+                                                                                            print(', ',end='')
+                                                                                    print('')
+                                                    if 'Spectrometers'.casefold() in child2.tag.casefold():                                
+                                                        for child3 in child2:
+                                                            if 'Spectrometer'.casefold() in child3.tag.casefold():
+                                                                for child4 in child3:
+                                                                    if 'Grating'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'Selected'.casefold() in child5.tag.casefold():
+                                                                                print('Grating:\t\t\t%s'%(child5.text),end='')
+                                                                            if 'CenterWavelength'.casefold() in child5.tag.casefold():
+                                                                                print(', CWL: %0.3f nm'%(np.float64(child5.text)))
+                                                                    if 'Experiment'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'StepAndGlue'.casefold() in child5.tag.casefold():
+                                                                                startWL = 0
+                                                                                endWL = 0
+                                                                                enabled = ''
+                                                                                for child6 in child5:
+                                                                                    if 'Enabled'.casefold() in child6.tag.casefold():
+                                                                                        enabled = child6.text
+                                                                                    if 'StartingWavelength'.casefold() in child6.tag.casefold():
+                                                                                        startWL = np.float64(child6.text)
+                                                                                    if 'EndingWavelength'.casefold() in child6.tag.casefold():
+                                                                                        endWL = np.float64(child6.text)
+                                                                                if enabled == 'True':
+                                                                                    print('Step and Glue:\t\t%0.3f nm to %0.3f nm'%(startWL,endWL))
                                                                 
    
 if __name__=="__main__":  
@@ -436,7 +468,7 @@ if __name__=="__main__":
                                     #for comparison of multiple images, open each in separate kernel
         nameSplit = (filenames[i].rsplit('/',maxsplit=1)[1]).rsplit(r'.',maxsplit=1)[0]     #'/' for tk, '\\' for System.Windows.Forms        
         figTotal.Add(plt.figure(nameSplit))
-        d,x,w = parseSpe(filenames[i])
+        d,x,w = parseSpe(filenames[i],region=0)
         #append lists
         dataTotal.Add(d)
         framesMax = np.size(dataTotal.Get(i),axis=0)
