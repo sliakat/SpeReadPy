@@ -18,6 +18,13 @@ class ROI:
         self.height=height
         self.stride=stride
         
+class MetaContainer:
+    def __init__(self,metaType,stride,*,metaEvent:str='',metaResolution:np.int64=0):
+        self.metaType=metaType
+        self.stride=stride
+        self.metaEvent=metaEvent
+        self.metaResolution=metaResolution
+        
 class dataContainer:
     def __init__(self,data,**kwargs):
         self.data=data
@@ -38,22 +45,51 @@ def readSpe(filePath):
         with open(filePath, encoding="utf8") as f:
             f.seek(xmlLoc)
             xmlFooter = f.read()
-            xmlRoot = ET.fromstring(xmlFooter)            
-            #print(xmlRoot[0][0].attrib)
-            readoutStride=np.int((xmlRoot[0][0].attrib)['stride'])
-            numFrames=np.int((xmlRoot[0][0].attrib)['count'])
-            pixFormat=(xmlRoot[0][0].attrib)['pixelFormat']
-            #find number of regions
-            #regions = list(xmlRoot[0][0])
+            xmlRoot = ET.fromstring(xmlFooter)
             regionList=list()
-            for child in xmlRoot[0][0]:
-                regStride=np.int((child.attrib)['stride'])
-                regWidth=np.int((child.attrib)['width'])
-                regHeight=np.int((child.attrib)['height'])
-                regionList.append(ROI(regWidth,regHeight,regStride))
-            dataList=list()
-            regionOffset=0
-            
+            metaList = list()
+            dataList=list()            
+            #print(xmlRoot[0][0].attrib)
+            calFlag=False
+            for child in xmlRoot:
+                if 'DataFormat'.casefold() in child.tag.casefold():
+                    for child1 in child:                    
+                        if 'DataBlock'.casefold() in child1.tag.casefold():
+                            readoutStride=np.int64(child1.get('stride'))
+                            numFrames=np.int64(child1.get('count'))
+                            pixFormat=child1.get('pixelFormat')
+                            for child2 in child1:
+                                if 'DataBlock'.casefold() in child1.tag.casefold():
+                                    regStride=np.int64(child2.get('stride'))
+                                    regWidth=np.int64(child2.get('width'))
+                                    regHeight=np.int64(child2.get('height'))
+                                    regionList.append(ROI(regWidth,regHeight,regStride))
+                if 'MetaFormat'.casefold() in child.tag.casefold():
+                    for child1 in child:                    
+                        if 'MetaBlock'.casefold() in child1.tag.casefold():
+                            for child2 in child1:
+                                metaType = child2.tag.rsplit('}',maxsplit=1)[1]
+                                metaEvent = child2.get('event')
+                                metaStride = np.int64(np.int64(child2.get('bitDepth'))/8)
+                                metaResolution = child2.get('resolution')
+                                if metaEvent != None and metaResolution !=None:
+                                    metaList.append(MetaContainer(metaType,metaStride,metaEvent=metaEvent,metaResolution=np.int64(metaResolution)))
+                                else:
+                                    metaList.append(MetaContainer(metaType,metaStride))                                
+                if 'Calibrations'.casefold() in child.tag.casefold():
+                    for child1 in child:
+                        if 'WavelengthMapping'.casefold() in child1.tag.casefold():
+                            for child2 in child1:
+                                if 'WavelengthError'.casefold() in child2.tag.casefold():
+                                    wavelengths = np.array([])
+                                    wlText = child2.text.rsplit()
+                                    for elem in wlText:
+                                        wavelengths = np.append(wavelengths,np.fromstring(elem,sep=',')[0])
+                                else:
+                                    wavelengths=np.fromstring(child2.text,sep=',')
+                            calFlag=True                    
+                    
+            regionOffset=0            
             #read entire datablock
             f.seek(0)
             bpp = np.dtype(dataTypes[pixFormat]).itemsize
@@ -67,22 +103,7 @@ def readSpe(filePath):
                     offLen.append((np.int(regionOffset+(j*readoutStride/bpp)),regionList[i].width*regionList[i].height))     
                 regionData = np.concatenate([totalBlock[offset:offset+length] for offset,length in offLen])
                 dataList.append(np.reshape(regionData,(numFrames,regionList[i].height,regionList[i].width),order='C'))
-
-            calFlag=False                
-            for child in xmlRoot[1]:
-                if 'Wavelength' in child.tag:
-                    if 'Error' in child[0].tag:     #handle the case where errors are reported in pair with the WL
-                        wavelengths = np.array([])
-                        wlText = child[0].text.rsplit()
-                        for elem in wlText:
-                            wavelengths = np.append(wavelengths,np.fromstring(elem,sep=',')[0])
-                    else:
-                        wavelengths=np.fromstring(child[0].text,sep=',')
-                    calFlag=True
-                if 'SensorMapping' in child.tag and calFlag==True:
-                    startX = int(child.attrib['x'])
-                    xWidth = int(child.attrib['width'])
-                    wavelengths = wavelengths[startX:(startX+xWidth)]                
+                
             if calFlag==False:
                 totalData=dataContainer(dataList,xmlFooter=xmlFooter)
             else:
