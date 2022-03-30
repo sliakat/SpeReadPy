@@ -9,17 +9,13 @@ showSpeMPL.py is a script that uses matplotlib with the slider widget to visuali
   -when running, tk file dialog pops up asking you to pick the file(s) you want to visualize
   -can scroll through multi-frame images using slider widget
   -boxes / spans can be selected for simple stats on images / line plots
-  -currently works for region of interest #0
+  -need to specify the desired ROI in parseSpe; will work for multiple ROIs
+  -console prints some file information that is helpful for quick reference
 
 showSpeTK.py is a script that uses matplotlib w/ TK backend to visualize images.
   -need to set graphics backend to Tk (%gui tk)
-  -other notes same as showSpeMPL.py
   -sliders will work for multiple files (unlike in spowSpeMPL where the sliders can't seem to connect to multiple figs in the same kernel).
-
-visualizeSpe.py is an example of how to load and visualize the data using pyplot
-  -this was the first one I uploaded, so I will leave it here, but the recent 'showSpe*' scripts are "better" visualization implementations
-
-showSpe.py is a function that allows the operations done in the visualizeSpe.py script to be called from another script -- 1 line gets you a plot, xml, fig handle, and WL cal (if it exists in the spe).
+  -did not add spe xml parsing -- can just copy function from showSpeMPL.py if so desired
 
 readSpe takes a file path (including filename) as a string. It then outputs spe file content (data, xml footer, wavelength cal if [if applicable]) to a dataContainer class (defined in the readSpe.py file).
 
