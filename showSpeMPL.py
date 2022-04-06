@@ -9,6 +9,7 @@ from readSpe import readSpe
 import numpy as np
 import tkinter as tk
 from tkinter import filedialog
+from tkinter import simpledialog
 from matplotlib import pyplot as plt
 from matplotlib.widgets import RectangleSelector, SpanSelector, Slider
 import xml.etree.ElementTree as ET
@@ -109,7 +110,8 @@ def ParseXmlForRegion(xmlStr, region):
     return startX, width
        
 #gets data out of spe file
-def parseSpe(filename,*,region: int=0, suppress: bool=True):    
+def parseSpe(filename,*,suppress: bool=True):
+    region = 0    
     totalData = readSpe(filename)
     wavelengths=[0]
     xmlFooter = 'xml footer does not exist for spe2.0 files' 
@@ -120,6 +122,11 @@ def parseSpe(filename,*,region: int=0, suppress: bool=True):
         if not suppress:
             print('No wavelength calibration in spe.')            
     dataList = totalData.data
+    if len(dataList) > 1:
+        region = simpledialog.askinteger('Pick Region', 'Pick ROI:\n0-%d'%(len(dataList)-1))
+    if region >= len(dataList) or region < 0:
+        print('Invalid ROI entered, showing ROI #1')
+        region = 0
     data = dataList[region]
     if len(wavelengths) > 2:
         startX, width = ParseXmlForRegion(xmlFooter,region)
@@ -330,6 +337,8 @@ def PrintSelectedXmlEntries(xmlStr):
                                                                                     print('Vertical Shift:\t\t%sus'%(child5.text))
                                                                             if 'PortsUsed'.casefold() in child5.tag.casefold():
                                                                                 print('Ports Used:\t\t\t%s'%(child5.text))
+                                                                            if 'Accumulations'.casefold() in child5.tag.casefold():
+                                                                                print('Accumulations:\t\t%s'%(child5.text))
                                                                     if 'HardwareIO'.casefold() in child4.tag.casefold():
                                                                         for child5 in child4:                                                    
                                                                             if 'Trigger'.casefold() in child5.tag.casefold():
@@ -468,7 +477,7 @@ if __name__=="__main__":
                                     #for comparison of multiple images, open each in separate kernel
         nameSplit = (filenames[i].rsplit('/',maxsplit=1)[1]).rsplit(r'.',maxsplit=1)[0]     #'/' for tk, '\\' for System.Windows.Forms        
         figTotal.Add(plt.figure(nameSplit))
-        d,x,w = parseSpe(filenames[i],region=0)
+        d,x,w = parseSpe(filenames[i])
         #append lists
         dataTotal.Add(d)
         framesMax = np.size(dataTotal.Get(i),axis=0)
