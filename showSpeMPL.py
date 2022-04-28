@@ -61,7 +61,7 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
     #plotting
     if np.size(data,0)==1:
         ax.grid()
-        if len(wave) > 10:
+        if len(wave) > 10 and pixAxis==False:
             ax.plot(wave,data[0])
             ax.set_xlabel('Wavelength (nm)')
             ax.set(xlim=(wave[0],wave[-1]))
@@ -229,6 +229,7 @@ def PrintSelectedXmlEntries(xmlStr):
                     if 'DataHistory'.casefold() in child1.tag.casefold():
                         for child2 in child1:
                             if 'Origin'.casefold() in child2.tag.casefold():
+                                print('LF version used:\t%s'%(child2.get('softwareVersion')))
                                 for child3 in child2:
                                     if 'Experiment'.casefold() in child3.tag.casefold():
                                         for child4 in child3:
@@ -293,21 +294,38 @@ def PrintSelectedXmlEntries(xmlStr):
                                                                                         if 'Pulse'.casefold() in child6.tag.casefold():
                                                                                             startWidth = np.float64(child6.get('width'))
                                                                                             startDelay = np.float64(child6.get('delay'))
-                                                                            if 'Sequential'.casefold() in child5.tag.casefold():
+                                                                            if 'Sequential'.casefold() in child5.tag.casefold():                                                                                
                                                                                 for child6 in child5:
                                                                                     if 'StartingGate'.casefold() in child6.tag.casefold():
-                                                                                        for child7 in child6:
-                                                                                            if 'Pulse'.casefold() in child7.tag.casefold():
-                                                                                                startWidth = np.float64(child7.get('width'))
-                                                                                                startDelay = np.float64(child7.get('delay'))
+                                                                                        if child6.get('relevance') != 'False':
+                                                                                            for child7 in child6:
+                                                                                                if 'Pulse'.casefold() in child7.tag.casefold():
+                                                                                                    startWidth = np.float64(child7.get('width'))
+                                                                                                    startDelay = np.float64(child7.get('delay'))
                                                                                     if 'EndingGate'.casefold() in child6.tag.casefold():
-                                                                                        for child7 in child6:
-                                                                                            if 'Pulse'.casefold() in child7.tag.casefold():
-                                                                                                endWidth = np.float64(child7.get('width'))
-                                                                                                endDelay = np.float64(child7.get('delay'))                                                                    
+                                                                                        if child6.get('relevance') != 'False':
+                                                                                            for child7 in child6:
+                                                                                                if 'Pulse'.casefold() in child7.tag.casefold():
+                                                                                                    endWidth = np.float64(child7.get('width'))
+                                                                                                    endDelay = np.float64(child7.get('delay'))  
+                                                                            if 'Dif'.casefold() in child5.tag.casefold():                                                                                
+                                                                                for child6 in child5:
+                                                                                    if 'StartingGate'.casefold() in child6.tag.casefold():
+                                                                                        if child6.get('relevance') != 'False':
+                                                                                            for child7 in child6:
+                                                                                                if 'Pulse'.casefold() in child7.tag.casefold():
+                                                                                                    startWidth = np.float64(child7.get('width'))
+                                                                                                    startDelay = np.float64(child7.get('delay'))
+                                                                                    if 'EndingGate'.casefold() in child6.tag.casefold():
+                                                                                        if child6.get('relevance') != 'False':
+                                                                                            for child7 in child6:
+                                                                                                if 'Pulse'.casefold() in child7.tag.casefold():
+                                                                                                    endWidth = np.float64(child7.get('width'))
+                                                                                                    endDelay = np.float64(child7.get('delay'))
+                                                                                                    gateMode = 'Dif'
                                                                         if gateMode == 'Repetitive':
                                                                             print('Gating:\t\t\t\t%s\nGate Width:\t\t\t%0.3f ns\nGate Delay:\t\t\t%0.3f ns'%(gateMode,startWidth,startDelay))
-                                                                        if gateMode == 'Sequential':
+                                                                        if gateMode == 'Sequential' or gateMode == 'Dif':
                                                                             print('Gating:\t\t\t\t%s\nStart Width:\t\t%0.3f ns\nStart Delay:\t\t%0.3f ns\nEnd Width:\t\t\t%0.3f ns\nEnd Delay:\t\t\t%0.3f ns'
                                                                                   %(gateMode,startWidth,startDelay,endWidth,endDelay))
                                                                     if 'Intensifier'.casefold() in child4.tag.casefold():
@@ -433,6 +451,7 @@ def PrintSelectedXmlEntries(xmlStr):
                                                                             if 'CenterWavelength'.casefold() in child5.tag.casefold():
                                                                                 print(', CWL: %0.3f nm'%(np.float64(child5.text)))
                                                                     if 'Experiment'.casefold() in child4.tag.casefold():
+                                                                        calibrationList = []
                                                                         for child5 in child4:
                                                                             if 'StepAndGlue'.casefold() in child5.tag.casefold():
                                                                                 startWL = 0
@@ -447,8 +466,26 @@ def PrintSelectedXmlEntries(xmlStr):
                                                                                         endWL = np.float64(child6.text)
                                                                                 if enabled == 'True':
                                                                                     print('Step and Glue:\t\t%0.3f nm to %0.3f nm'%(startWL,endWL))
-                                                                
-   
+                                                                            if 'IntensityCalibration'.casefold() in child5.tag.casefold():
+                                                                                for child6 in child5:
+                                                                                    if 'Enabled'.casefold() in child6.tag.casefold():
+                                                                                        if child6.text == 'True':
+                                                                                            calibrationList.append('Intensity')
+                                                                            if 'WavelengthCalibration'.casefold() in child5.tag.casefold():
+                                                                                for child6 in child5:
+                                                                                    if 'Mode'.casefold() in child6.tag.casefold():
+                                                                                        calType = child6.get('type')
+                                                                                        if calType == 'NullableCalibrationMode':
+                                                                                            break
+                                                                                        else:
+                                                                                            calString = 'Wavelength (%s)'%(child6.text)
+                                                                                            calibrationList.append(calString)                                                                                            
+                                                                        if len(calibrationList) > 0:
+                                                                            print('Calibration(s):\t\t',end='')
+                                                                            for i in range(0,len(calibrationList)):
+                                                                                print('%s'%(calibrationList[i]),end='')
+                                                                                if i <len(calibrationList)-1:
+                                                                                    print(', ',end='')   
 if __name__=="__main__":  
     warnings.filterwarnings("ignore")
     #these objects append to keep data in scope in case they are needed w/ interactive console, labeling them *Total to distinguish    
