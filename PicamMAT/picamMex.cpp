@@ -92,7 +92,7 @@ public:
 			while (cameraRunning)
 			{
 				Picam_WaitForAcquisitionUpdate(camera_,timeout_,&data,&status);
-                cameraRunning = status.running;
+                		cameraRunning = status.running;
 			}
 		}
         int err = Picam_CloseCamera(camera_);
