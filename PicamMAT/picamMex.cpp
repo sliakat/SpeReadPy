@@ -17,6 +17,8 @@ public:
     {
         rows_ = 0;
         cols_ = 0;
+        id_ = new PicamCameraID;
+        camera_ = new PicamHandle;
     }
     void operator()(ArgumentList outputs, ArgumentList inputs){
         int* errPtr;
@@ -46,9 +48,9 @@ public:
     void InitAndOpen(int* errPtr)
     {
         Picam_InitializeLibrary();
-        int err = Picam_OpenFirstCamera(&camera_);
-        Picam_GetCameraID(camera_,&id_);
-        Picam_GetParameterFloatingPointValue(camera_, PicamParameter_ReadoutRateCalculation, &readRate_);
+        int err = Picam_OpenFirstCamera(camera_);
+        Picam_GetCameraID(*camera_,id_);
+        Picam_GetParameterFloatingPointValue(*camera_, PicamParameter_ReadoutRateCalculation, &readRate_);
         *(errPtr) = err;
     }
     void AcquireSingle(int *errPtr)
@@ -63,19 +65,21 @@ public:
         {
             timeout_ = 3000;
         }
-        int err = Picam_Acquire(camera_, 1, timeout_, &data, &errors);
+        
+        int err = Picam_Acquire(*camera_, 1, timeout_, &data, &errors);
         *(errPtr) = err;
+        
         if (err == 0)
         {
             GetXandY();
-            Picam_GetParameterIntegerValue(camera_, PicamParameter_ReadoutStride, &readoutStride_);
-            piint readCount = data.readout_count;
+            Picam_GetParameterIntegerValue(*camera_, PicamParameter_ReadoutStride, &readoutStride_);
+            piint readCount = data.readout_count;        
             //assume 16-bit data
             pi16u* framePtr = nullptr;
             framePtr = reinterpret_cast<pi16u*>(data.initial_readout);
             std::vector<pi16u> imageData16(framePtr, framePtr + (readCount * (readoutStride_ / 2)));
 			imageData16_ = imageData16;
-        }
+        }        
     }
     
     //this is the cleanup
@@ -85,18 +89,20 @@ public:
         pibln cameraRunning = false;
         PicamAvailableData data;
         PicamAcquisitionStatus status;
-        Picam_IsAcquisitionRunning(camera_, &cameraRunning);
+        Picam_IsAcquisitionRunning(*camera_, &cameraRunning);
         if (cameraRunning)
 		{
-			Picam_StopAcquisition(camera_);
+			Picam_StopAcquisition(*camera_);
 			while (cameraRunning)
 			{
-				Picam_WaitForAcquisitionUpdate(camera_,timeout_,&data,&status);
-                		cameraRunning = status.running;
+				Picam_WaitForAcquisitionUpdate(*camera_,timeout_,&data,&status);
+                cameraRunning = status.running;
 			}
 		}
-        int err = Picam_CloseCamera(camera_);
+        int err = Picam_CloseCamera(*camera_);
         Picam_UninitializeLibrary();
+        delete id_;
+        delete camera_;
         *(errPtr) = err;
     }
     //destructor to close the camera and uninitialize PICam if something happens to the MATLAB connection.
@@ -109,7 +115,7 @@ public:
         //here we assume there is only 1 ROI (as we did not assign any ROI parameters in this example
         //see Rois sample for more examples on ROI
         const PicamRois* rois; piint width, height, xbin, ybin;
-        Picam_GetParameterRoisValue(camera_, PicamParameter_Rois, &rois);
+        Picam_GetParameterRoisValue(*camera_, PicamParameter_Rois, &rois);
 
         width = rois[0].roi_array[0].width;
         height = rois[0].roi_array[0].height;
@@ -121,8 +127,8 @@ public:
         rows_ = (piint)(height / ybin);
     }
 private:
-    PicamHandle camera_;
-    PicamCameraID id_;
+    PicamHandle* camera_;
+    PicamCameraID* id_;
     double readRate_;
     int readoutStride_;
     std::vector<pi16u> imageData16_;
