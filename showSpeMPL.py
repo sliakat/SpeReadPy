@@ -512,10 +512,10 @@ def PrintSelectedXmlEntries(xmlStr):
                                                                             for i in range(0,len(calibrationList)):
                                                                                 print('%s'%(calibrationList[i]),end='')
                                                                                 if i <len(calibrationList)-1:
-                                                                                    print(', ',end='')
-        print('Viewing Region:\t\t%d x %d, xBin %d, yBin %d\n\tFull ROI Info: [%d, %d, %d, %d, %d, %d]'%(rgn.ogWidth_,rgn.ogHeight_,rgn.xBin_,rgn.yBin_,
-                                                                                                           rgn.startX_,rgn.startY_,rgn.width_,rgn.height_,rgn.xBin_,rgn.yBin_))
+                                                                                    print(', ',end='')        
     print('')
+    print('Viewing Region:\t\t%d x %d, xBin %d, yBin %d\n\tFull ROI Info: [%d, %d, %d, %d, %d, %d]'%(rgn.ogWidth_,rgn.ogHeight_,rgn.xBin_,rgn.yBin_,
+                                                                                                           rgn.startX_,rgn.startY_,rgn.width_,rgn.height_,rgn.xBin_,rgn.yBin_))
     
 if __name__=="__main__":  
     warnings.filterwarnings("ignore")
