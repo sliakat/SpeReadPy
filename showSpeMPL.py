@@ -29,6 +29,26 @@ class Container:
             return self._content[index]
     def Reset(self):
         self._content = list()
+        
+class Region:
+    def __init__(self):
+        self.startX_ = 0
+        self.startY_ = 0
+        self.ogWidth_ = 0
+        self.ogHeight_ = 0
+        self.width_ = 0
+        self.height_ = 0
+        self.xBin_ = 0
+        self.yBin_ = 0
+    def Set(self,x,y,ogWidth,ogHeight,width,height,xBin,yBin):
+        self.startX_ = x
+        self.staryY_ = y
+        self.ogWidth_ = ogWidth
+        self.ogHeight_ = ogHeight
+        self.width_ = width
+        self.height_ = height
+        self.xBin_ = xBin
+        self.yBin_ = yBin
 
 #helper function to get pixel coords if wavelength cal is on x-axis
 def findXPixels(wl,x1,x2):
@@ -101,9 +121,14 @@ def ParseXmlForRegion(xmlStr, region):
                     if 'SensorMapping'.casefold() in child1.tag.casefold():
                         if counter == region:
                             startX = np.int32(child1.get('x'))
-                            width = np.int32(child1.get('width'))
+                            startY = np.int32(child1.get('y'))
+                            ogWidth = np.int32(child1.get('width'))
+                            ogHeight = np.int32(child1.get('height'))
                             xbin = np.int32(child1.get('xBinning'))
-                            width = np.int32(width / xbin)
+                            ybin = np.int32(child1.get('xBinning'))
+                            width = np.int32(ogWidth / xbin)
+                            height = np.int32(ogHeight / ybin)
+                            rgn.Set(startX, startY, ogWidth, ogHeight, width, height, xbin, ybin)
                             break
                         else:
                             counter += 1
@@ -128,8 +153,8 @@ def parseSpe(filename,*,suppress: bool=True):
         print('Invalid ROI entered, showing ROI #1')
         region = 0
     data = dataList[region]
-    if len(wavelengths) > 2:
-        startX, width = ParseXmlForRegion(xmlFooter,region)
+    startX, width = ParseXmlForRegion(xmlFooter,region)
+    if len(wavelengths) > 2:        
         if startX > -1 and width > 0:
             wavelengths = wavelengths[startX:(startX+width)]
     print('%d ROIs in this spe file, showing ROI %d'%(len(dataList),region+1))
@@ -242,7 +267,7 @@ def PrintSelectedXmlEntries(xmlStr):
                                                     if 'Spectrometers'.casefold() in child2.tag.casefold():
                                                         for child3 in child2:
                                                             if 'Spectrometer'.casefold() in child3.tag.casefold():
-                                                                print('Spectrograph model: %s\n\tSN: %s'%(child3.get('model'),child3.get('serialNumber')))
+                                                                print('Spectrograph model: %s\n\tSN: %s'%(child3.get('model'),child3.get('serialNumber')))                                            
                                             if 'Devices'.casefold() in child4.tag.casefold():
                                                 for child2 in child4:
                                                     if 'Cameras'.casefold() in child2.tag.casefold():
@@ -263,8 +288,10 @@ def PrintSelectedXmlEntries(xmlStr):
                                                                                 for child6 in child5:
                                                                                     if 'Reading'.casefold() in child6.tag.casefold():
                                                                                         print('Temperature:\t\t%sC, Status: '%(child6.text),end='')
-                                                                                    if ('Status'.casefold() in child6.tag.casefold()) and ('CoolingFanStatus'.casefold() not in child6.tag.casefold()):
+                                                                                    if ('Status'.casefold() in child6.tag.casefold()) and ('CoolingFanStatus'.casefold() not in child6.tag.casefold()) and ('VacuumStatus'.casefold() not in child6.tag.casefold()):
                                                                                         print('%s'%(child6.text))
+                                                                                    if ('VacuumStatus'.casefold() in child6.tag.casefold()):
+                                                                                        print('Vacuum Status:\t\t%s'%(child6.text))
                                                                             if 'Cleaning'.casefold() in child5.tag.casefold():
                                                                                 for child6 in child5:
                                                                                     if 'CleanSerialRegister'.casefold() in child6.tag.casefold():
@@ -485,7 +512,11 @@ def PrintSelectedXmlEntries(xmlStr):
                                                                             for i in range(0,len(calibrationList)):
                                                                                 print('%s'%(calibrationList[i]),end='')
                                                                                 if i <len(calibrationList)-1:
-                                                                                    print(', ',end='')   
+                                                                                    print(', ',end='')
+        print('Viewing Region:\t\t%d x %d, xBin %d, yBin %d\n\tFull ROI Info: [%d, %d, %d, %d, %d, %d]'%(rgn.ogWidth_,rgn.ogHeight_,rgn.xBin_,rgn.yBin_,
+                                                                                                           rgn.startX_,rgn.startY_,rgn.width_,rgn.height_,rgn.xBin_,rgn.yBin_))
+    print('')
+    
 if __name__=="__main__":  
     warnings.filterwarnings("ignore")
     #these objects append to keep data in scope in case they are needed w/ interactive console, labeling them *Total to distinguish    
@@ -499,6 +530,7 @@ if __name__=="__main__":
     SSTotal = Container()
     MPSliderTotal = Container()
     MPSliderConnect = Container()
+    rgn = Region()
     
     #globals
     pixelAxis = False
