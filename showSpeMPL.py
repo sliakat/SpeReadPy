@@ -125,7 +125,7 @@ def ParseXmlForRegion(xmlStr, region):
                             ogWidth = np.int32(child1.get('width'))
                             ogHeight = np.int32(child1.get('height'))
                             xbin = np.int32(child1.get('xBinning'))
-                            ybin = np.int32(child1.get('xBinning'))
+                            ybin = np.int32(child1.get('yBinning'))
                             width = np.int32(ogWidth / xbin)
                             height = np.int32(ogHeight / ybin)
                             rgn.Set(startX, startY, ogWidth, ogHeight, width, height, xbin, ybin)
