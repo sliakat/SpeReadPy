@@ -15,6 +15,7 @@ from matplotlib.widgets import RectangleSelector, SpanSelector, Slider
 import xml.etree.ElementTree as ET
 import xml.dom.minidom as dom
 import warnings
+from scipy import interpolate
 
 #generic container class for the various objects used in this script
 class Container:
@@ -62,6 +63,30 @@ def update_frame(val,data,fig,ax,wave,name):    #pass in full data
     fig.canvas.draw_idle()
     currFrame = int(val)
     plotData(data[currFrame-1,:,:],ax,wave,name,currFrame,pixAxis=pixelAxis)
+    
+#helper to get FWHM of a line section
+def FWHM(data):  #pass in a line (1D array)
+    bias = np.percentile(data,10)  #take the 10th percentile of data as a bias
+    halfMax = (np.max(data)-bias)/2 + bias #this is the target to search for
+    #interpolate the data
+    interpFactor = 100  #FWHM precision to hundredths
+    dataPts = len(data)
+    x = np.arange(0,dataPts)
+    f = interpolate.interp1d(x, data)
+    xnew = np.arange(0,dataPts-1,1/interpFactor)
+    ynew = f(xnew)
+    #search for FWHM
+    maxLoc = np.argmax(ynew)
+    if maxLoc > 0:
+        subtracted = np.abs(ynew-halfMax)
+        leftSide = subtracted[0:maxLoc]
+        rightSide = subtracted[maxLoc:len(subtracted)]
+        leftPoint = np.argmin(leftSide)
+        rightPoint = np.argmin(rightSide) + maxLoc
+        #print(leftPoint,maxLoc,rightPoint)
+        return (rightPoint-leftPoint)/interpFactor
+    else:
+        return 0
     
 
 def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=-1, xBound2: int=-1, yBound1: int=-1, yBound2: int=-1):     #pass in frame
@@ -184,8 +209,10 @@ def box_select_callback(eclick, erelease, axis, wl, name):
     if not pixelAxis and len(wl) > 10:
         x1, x2 = findXPixels(wl, x1, x2)
     data = np.array(axis.get_images().pop()._A)
+    centerRow = np.int32(np.floor(np.shape(data)[0]/2))
     mean, dev, regMin, regMax = GetStats(data,x1,x2,y1,y2)
-    statsString = 'Region Mean: %0.2f          Region Min: %0.2f\nRegion Std: %0.2f          Region Max: %0.2f\nMin/Mean Ratio: %0.3f'%(mean,regMin,dev,regMax,(regMin/mean))    
+    fwhm = FWHM(data[centerRow,x1:x2])
+    statsString = 'Region Mean: %0.2f          Region Min: %0.2f\nRegion Std: %0.2f          Region Max: %0.2f\nMin/Mean Ratio: %0.3f          FWHM of horizontal slice: %0.3f pix'%(mean,regMin,dev,regMax,(regMin/mean),fwhm)    
     if autoContrast:
         plotData(data,axis,wl,name,currFrame,pixAxis=pixelAxis,xBound1=x1,xBound2=x2,yBound1=y1,yBound2=y2)
     else:
@@ -207,7 +234,8 @@ def StatsLinePlot(xmin, xmax, axis, wl):
     regionDat = axis.get_lines()[0].get_data()[1][int(np.floor(xmin)):int(np.floor(xmax))]
     mean = np.mean(regionDat)
     dev = np.std(regionDat)
-    statsString = 'Region Mean: %0.2f\n Region Std: %0.2f'%(mean,dev)
+    fwhm = FWHM(regionDat)
+    statsString = 'Region Mean: %0.2f\n Region Std: %0.2f\nFWHM: %0.3f pix'%(mean,dev,fwhm)
     WriteStats(axis, statsString)
     plt.draw()
     
