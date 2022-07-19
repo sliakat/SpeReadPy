@@ -16,6 +16,8 @@ import xml.etree.ElementTree as ET
 import xml.dom.minidom as dom
 import warnings
 from scipy import interpolate
+from matplotlib import cm
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 
 #generic container class for the various objects used in this script
 class Container:
@@ -56,6 +58,19 @@ def findXPixels(wl,x1,x2):
     x1Pix = int(np.argmin(np.abs(wl - x1)))
     x2Pix = int(np.argmin(np.abs(wl - x2)))
     return x1Pix,x2Pix
+
+#not using this in plot routine because mpl norms and then cmaps, but it is still a useful helper function for other applications
+def GenCustomCmap(data, bits: int=16):  #take gray cmap, make yellow if 0, red if saturated
+    gray = cm.get_cmap('gray',2**bits)
+    newColors = gray(np.linspace(0,1,bits))
+    red = np.array([1,0,0,1])
+    yellow = np.array([1,1,0,1])
+    if np.min(data) <= 0:
+        newColors[0,:] = yellow
+    if np.max(data) == 2**bits-1:
+        newColors[-1,:] = red
+    newMap = ListedColormap(newColors)
+    return newMap
     
 #callback for scale
 def update_frame(val,data,fig,ax,wave,name):    #pass in full data
@@ -90,13 +105,15 @@ def FWHM(data):  #pass in a line (1D array)
     
 
 def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=-1, xBound2: int=-1, yBound1: int=-1, yBound2: int=-1):     #pass in frame
+    global bits, bg  
+    flatData = data.flatten()
     #image contrast adjustments
     if xBound1 > 0 and xBound2 > 10 and yBound1 > 0 and yBound2 > 10:
             display_min = int(np.percentile(data[yBound1:yBound2,xBound1:xBound2].flatten(),5))
             display_max = int(np.percentile(data[yBound1:yBound2,xBound1:xBound2].flatten(),95))
     else:
-        display_min = int(np.percentile(data.flatten(),5))
-        display_max = int(np.percentile(data.flatten(),95))
+        display_min = int(np.percentile(flatData,5))
+        display_max = int(np.percentile(flatData,95))
     if display_min < 1:
         display_min = 1
     if display_max <1:
@@ -116,6 +133,9 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
             ax.set(xlim=(0,np.size(data[0])))
         ax.set_ylabel('Intensity (counts)')
     else:
+        # colorMap = 'gray'
+        # if bg==False:
+        #     colorMap = GenCustomCmap(flatData,bits)
         if len(wave) > 10 and pixAxis==False:
             waveRange = (wave[-1] - wave[0])
             # if waveRange < 50:
@@ -123,12 +143,19 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
             # else:
             #     aspect = 0.25
             aspect = (waveRange/np.size(data,0))/1.75
-            ax.imshow(data,vmin=display_min,vmax=display_max,cmap='gray',extent=[wave[0],wave[-1],np.size(data,0),0],aspect=aspect)   
+            ax.imshow(data,vmin=display_min,vmax=display_max,cmap='gray',extent=[wave[0],wave[-1],np.size(data,0),0],aspect=aspect)
             ax.set(xlabel='Wavelength (nm)')
         else:
             ax.imshow(data,origin='upper',vmin=display_min,vmax=display_max,cmap='gray')
             ax.set(xlabel='Column')
         ax.set(ylabel='Row')
+        if bg==False:
+            if np.min(data) <= 0:
+                zeros = np.argwhere(data==0)
+                ax.scatter(zeros[:,1],zeros[:,0],color='yellow',s=10)
+            if np.max(data) == 2**bits-1:
+                sat = np.argwhere(data==2**bits-1)
+                ax.scatter(sat[:,1],sat[:,0],color='red',s=10)
     axName = '%s, Frame %d'%(name,frame)
     ax.set_title(axName)
     plt.draw()
@@ -272,7 +299,8 @@ def FindXmlElems(xmlStr, stringList):
                     print('%s:\t\t%s\t\t%s'%(tagSplit, elem.attrib, elem.text))
         print('\n\n')
         
-def PrintSelectedXmlEntries(xmlStr):    
+def PrintSelectedXmlEntries(xmlStr):
+    global bits, bg    
     if len(xmlStr)>50:
         xmlRoot = ET.fromstring(xmlStr)
         #find DataHistories
@@ -439,6 +467,8 @@ def PrintSelectedXmlEntries(xmlStr):
                                                                                 print('ADC Quality:\t\t%s'%(child5.text))
                                                                             if 'CorrectPixelBias'.casefold() in child5.tag.casefold():
                                                                                 print('PBC On?:\t\t\t%s'%(child5.text))
+                                                                            if 'BitDepth'.casefold() in child5.tag.casefold():
+                                                                                bits = np.int32(child5.text)
                                                                     if 'Acquisition'.casefold() in child4.tag.casefold():
                                                                         for child5 in child4:
                                                                             if 'FrameRate'.casefold() in child5.tag.casefold():
@@ -478,6 +508,7 @@ def PrintSelectedXmlEntries(xmlStr):
                                                                                             if 'Enabled'.casefold() in child7.tag.casefold():
                                                                                                 if child7.text == 'True':
                                                                                                     correctionList.append('Background')
+                                                                                                    bg = True
                                                                                     if 'FlatfieldCorrection'.casefold() in child6.tag.casefold():
                                                                                         for child7 in child6:
                                                                                             if 'Enabled'.casefold() in child7.tag.casefold():
@@ -563,6 +594,8 @@ if __name__=="__main__":
     #globals
     pixelAxis = False
     autoContrast = True
+    bg = False
+    bits = 16
     currFrame = 1
     
     #use tk for file dialog
@@ -583,6 +616,7 @@ if __name__=="__main__":
             xmlFormat.append(dom.parseString(xmlTotal.Get(i)).toprettyxml())
         except:
             pass
+        PrintSelectedXmlEntries(xmlTotal.Get(i))
         wlTotal.Add(w)
         axTotal.Add(figTotal.Get(i).add_subplot(111))              
         MPSliderTotal.Add(SliderGen(axTotal.Get(i),framesMax))        
@@ -594,5 +628,4 @@ if __name__=="__main__":
             RSTotal.Add(RectSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))
         else:
             SSTotal.Add(SpanSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))
-        #FindXmlElems(xmlTotal.Get(i),['exposuretime','gain','speed','qual','background','reading','portsused','width','gate','pulse'])
-        PrintSelectedXmlEntries(xmlTotal.Get(i))
+        
