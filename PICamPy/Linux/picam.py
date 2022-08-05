@@ -43,6 +43,22 @@ def DisplayImage(imData, windowName):        #data needs to be passed in correct
     normData = cv2.normalize(imData,None,alpha=0, beta=65535, norm_type=cv2.NORM_MINMAX)
     cv2.imshow(windowName, normData)
     cv2.waitKey(50)    #cap opencv refresh at 20fps for stability. May be able to keep up faster on higher powered machines. Increase if stability issues.
+    
+#this will run in its own thread
+def AcquireHelper(camera):
+    dat = availableData(0,0)
+    aStatus=acqStatus(False,0,0)
+    camera.picamLib.Picam_StartAcquisition(camera.cam)
+    print('Acquisition Started, %0.2f readouts/sec...'%camera.readRate.value)
+    #start a do-while
+    camera.picamLib.Picam_WaitForAcquisitionUpdate(camera.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
+    camera.ProcessData(dat, camera.rStride.value)
+    #while part
+    while(aStatus.running):
+        camera.picamLib.Picam_WaitForAcquisitionUpdate(camera.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
+        camera.runningStatus = aStatus.running
+        if dat.readout_count > 0:                    
+            camera.ProcessData(dat, camera.rStride.value)
 
 class camIDStruct(ctypes.Structure):
     _fields_=[
@@ -145,7 +161,7 @@ class Camera():
         self.numRows = int(roiCast.height/roiCast.y_binning)
         self.picamLib.Picam_DestroyRois(rois)
         if self.numRows > 1:
-            self.display = False        #change this back to True for opencv display
+            self.display = True       #change this back to True for opencv display
     
     #test function to generate n ROIs of full width and 10+ rows that start from the top of the camera.
     def SetROIs(self, n):
@@ -233,22 +249,6 @@ class Camera():
             print('ROI %d shape: '%(i+1), np.shape(self.fullData[i]))
         self.picamLib.Picam_DestroyRois(rois)
 
-    def AcquireHelper(self):
-        dat = availableData(0,0)
-        aStatus=acqStatus(False,0,0)
-        print('Start Acq Error: %d'%(self.picamLib.Picam_StartAcquisition(self.cam)))
-        print('Acquisition Started, %0.2f readouts/sec...'%self.readRate.value)
-        #start a do-while
-        print('Wait for Acq Error: %d'%(self.picamLib.Picam_WaitForAcquisitionUpdate(self.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))))
-        self.ProcessData(dat, self.rStride.value)
-        #while part
-        while(aStatus.running):
-            self.picamLib.Picam_WaitForAcquisitionUpdate(self.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
-            self.runningStatus = aStatus.running
-            if dat.readout_count > 0:                    
-                self.ProcessData(dat, self.rStride.value)
-        #print('...Acquisiton Finished, %d readouts processed.'%(self.counter)) #is not needed since the DisplayCameraData function prints as well
-
     def Acquire(self,*,frames: int=1):    #will launch the AcquireHelper function in a new thread when user calls it
         frameCount = ctypes.c_int(0)
         frameCount.value = frames
@@ -260,10 +260,9 @@ class Camera():
             self.SetupFullData(frames)
             if self.display:
                 SetupDisplay(self.numRows, self.numCols, self.windowName)
-            self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))       
-            self.AcquireHelper()
-            #acqThread = threading.Thread(target=self.AcquireHelper)
-            #acqThread.start()    #data processing will be in a different thread than the display
+            self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))
+            acqThread = threading.Thread(target=AcquireHelper, args=(self,))
+            acqThread.start()    #data processing will be in a different thread than the display
 
     #display will only show first ROI
     def DisplayCameraData(self):    #this will block and then unregister callback (if applicable) when done
@@ -280,7 +279,7 @@ class Camera():
             self.picamLib.PicamAdvanced_UnregisterForAcquisitionUpdated(self.dev, self.acqCallback)
         except:
             pass
-        cv2.waitKey(20000)
+        cv2.waitKey(10000)
         cv2.destroyAllWindows()
 
     #since we're not saving data here, this is not generalized for multi-ROI -- the first ROI will be displayed
