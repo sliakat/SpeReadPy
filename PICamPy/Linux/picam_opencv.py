@@ -22,9 +22,9 @@ def ParseArgs():
 
 if __name__ == "__main__":
     #defaults for possible command line options
-    frameCount = 5    #default number for frame count, can change with valid command line arg    
+    frameCount = 10    #default number for frame count, can change with valid command line arg    
     asynch = False      #toggle to check the different acquisiton functions -- can toggle with command line arg
-    #ParseArgs()         #parse any input args
+    #ParseArgs()         #parse any input args -- leave commented by default but use if you feel comfortable
     
 
     cam = picam.Camera(libPath='C:\\Program Files\\Common Files\\Princeton Instruments\\Picam\\Runtime\\Picam.dll')
@@ -35,9 +35,10 @@ if __name__ == "__main__":
         cam.AcquireCB(frames=frameCount)       #asynchronously acquire with callback and preview n frames w/ opencv (does not save data)
     else:
         cam.Acquire(frames=frameCount)   #launch an acquisiton in a separate thread -- temporarily removed threading
-    #cam.DisplayCameraData()  #get rid of display until I figure ouut why my threading was failing
+    cam.DisplayCameraData()  #need to call display function to make multi-threading Acquire work, or else need to join the Acquire thread manually
     cam.Close()
 
     if not asynch:
         data = cam.ReturnData()
-        print('Shape of returned data (ROI 1) is ', np.shape(data[0]))
+        for i in range(0,len(data)):
+            print('Shape of returned data (ROI %d) is '%(i+1), np.shape(data[i]),'\n\tMean of ROI %d is: %0.3f cts'%((i+1),np.mean(data[i])))
