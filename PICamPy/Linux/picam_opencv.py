@@ -34,7 +34,7 @@ if __name__ == "__main__":
     if asynch:
         cam.AcquireCB(frames=frameCount)       #asynchronously acquire with callback and preview n frames w/ opencv (does not save data)
     else:
-        cam.Acquire(frames=frameCount)   #launch an acquisiton in a separate thread -- temporarily removed threading
+        cam.Acquire(frames=frameCount)   #launch an acquisiton in a separate thread
     cam.DisplayCameraData()  #need to call display function to make multi-threading Acquire work, or else need to join the Acquire thread manually
     cam.Close()
 
