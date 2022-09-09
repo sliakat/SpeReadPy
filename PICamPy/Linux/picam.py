@@ -175,6 +175,7 @@ class Camera():
             rois = roisStruct(ctypes.addressof(roiArray), n)
             self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, rois)
             self.GetFirstROI()   #call this to reset the numRows and numCols for display
+            self.Commit()
 
     def Commit(self,*,printMessage: bool=True):
         paramArray = ctypes.pointer(ctypes.c_int(0))
@@ -292,14 +293,19 @@ class Camera():
         frameCount = ctypes.c_int(0)
         frameCount.value = frames
         self.picamLib.Picam_SetParameterLargeIntegerValue(self.dev,paramFrames,frameCount)    #setting with dev handle commits to physical device if successful
+        #even though FullData will not be used, need to set shape for ROI parsing in ProcessData
+        self.SetupFullData(1)
+        
         #circ buffer so we can run for a long time without needing to allocate memory for all of it
         #the buffer array and the data structure should be global or class properties so they remain in scope when the
-        #function returns        
+        #function returns   
         widthNominal = np.floor(512*1024*1024/self.rStride.value)
-        if widthNominal < 4:                    #if 512MB not enough for 4 frames, allocate for 4 frames
-            buffWidth = self.rStride.value*4
+        if widthNominal < 100:                    #if 512MB not enough for 100 frames, allocate for 100 frames
+            buffWidth = self.rStride.value*100
         else:
-            buffWidth = int(widthNominal)*self.rStride.value
+            #buffWidth = int(widthNominal)*self.rStride.value
+            buffWidth = np.int32(512*1024*1024)
+        print(buffWidth)
         self.circBuff = ctypes.ARRAY(ctypes.c_ubyte,buffWidth)()
         self.aBuf.memory = ctypes.addressof(self.circBuff)
         self.aBuf.memory_size = ctypes.c_longlong(buffWidth)
@@ -309,7 +315,7 @@ class Camera():
         #lines for internal callback        
         self.acqCallback = CMPFUNC(self.AcquisitionUpdated)
         self.picamLib.PicamAdvanced_RegisterForAcquisitionUpdated(self.dev, self.acqCallback)
-        self.picamLib.Picam_StartAcquisition(self.dev)        
+        self.picamLib.Picam_StartAcquisition(self.dev)
         print('Acquisition of %d frames asynchronously started'%(frameCount.value))
 
     def ReturnData(self):
