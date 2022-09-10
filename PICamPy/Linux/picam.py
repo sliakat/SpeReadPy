@@ -21,6 +21,9 @@ paramStride = ctypes.c_int(calcParam(1,1,45))    #PicamParameter_ReadoutStride
 paramROIs = ctypes.c_int(calcParam(5, 4, 37))    #PicamParameter_Rois
 paramReadRate=ctypes.c_int(calcParam(2,1,50))    #PicamParameter_ReadoutRateCalculation
 paramExpose=ctypes.c_int(calcParam(2,2,23))        #PicamParameter_ExposureTime
+paramActiveWidth=ctypes.c_int(calcParam(1,2,1))
+paramActiveHeight=ctypes.c_int(calcParam(1,2,2))
+paramVerticalShiftRate=ctypes.c_int(calcParam(2,3,13))
 
 #opencv related functions
 def WindowSize(numRows,numCols):
@@ -31,6 +34,10 @@ def WindowSize(numRows,numCols):
         aspect = int(numCols/1920)
     winWidth = int(numCols/aspect)
     winHeight = int(numRows/aspect)
+    if winWidth < 512:
+        winWidth = 512
+    if winHeight < 512:
+        winHeight = 512
     return winWidth, winHeight
 
 def SetupDisplay(numRows,numCols,windowName):        
@@ -38,6 +45,7 @@ def SetupDisplay(numRows,numCols,windowName):
         cv2.namedWindow(windowName,cv2.WINDOW_NORMAL)
         winWidth, winHeight = WindowSize(numRows, numCols)
         cv2.resizeWindow(windowName,winWidth,winHeight)
+        cv2.moveWindow(windowName, 100,100)
 
 def DisplayImage(imData, windowName):        #data needs to be passed in correct shape
     normData = cv2.normalize(imData,None,alpha=0, beta=65535, norm_type=cv2.NORM_MINMAX)
@@ -96,6 +104,13 @@ class roisStruct(ctypes.Structure):
     _fields_=[
         ('roi_array', ctypes.c_void_p),
         ('roi_count', ctypes.c_int)]
+    
+class collectionConstraint(ctypes.Structure):
+    _fields_=[
+        ('scope', ctypes.c_int),
+        ('severity', ctypes.c_int),
+        ('values_array', ctypes.c_void_p),
+        ('values_count', ctypes.c_int)]
 
 
 class Camera():
@@ -172,10 +187,41 @@ class Camera():
                 roi = roiStruct(0, self.numCols, 1, lastPos, 10+i, 1)
                 roiArray[i] = roi
                 lastPos += 10+i
-            rois = roisStruct(ctypes.addressof(roiArray), n)
-            self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, rois)
+            rois = roisStruct(ctypes.addressof(roiArray[0]), n)
+            #print(rois)
+            self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, ctypes.byref(rois))
             self.GetFirstROI()   #call this to reset the numRows and numCols for display
             self.Commit()
+            
+    #testing Eran Reches' application of 8x3 ROIs -- print readout rates directly from function
+    def SetEqualROIs(self, n):
+        if self.numCols >= 2*(n*8):
+            ##first set to fastest shift rate -- 2 = required constraint
+            vertShift = ctypes.c_void_p(0)
+            shiftSpeed = ctypes.c_double(0)
+            self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramVerticalShiftRate,2,ctypes.byref(vertShift))
+            vertShift = ctypes.cast(vertShift,ctypes.POINTER(collectionConstraint))
+            shiftSpeed.value = ctypes.cast(vertShift[0].values_array,ctypes.POINTER(ctypes.c_double))[0] #fastest
+            print('Setting fastest shift rate...',end='')
+            self.picamLib.Picam_SetParameterFloatingPointValue(self.cam,paramVerticalShiftRate,shiftSpeed)
+            self.picamLib.Picam_GetParameterFloatingPointValue(self.cam,paramVerticalShiftRate,ctypes.byref(shiftSpeed))
+            print('Shift speed set to %0.3f us'%(shiftSpeed.value))
+            roiArray = ctypes.ARRAY(roiStruct, n)()
+            lastPos = 0
+            for i in range(0,n):
+                roi = roiStruct(lastPos, 8, 1, 0, 3, 1)
+                roiArray[i] = roi
+                lastPos += 16
+            rois = roisStruct(ctypes.addressof(roiArray), n)
+            self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, ctypes.byref(rois))
+            self.GetFirstROI()   #call this to reset the numRows and numCols for display
+            self.Commit()
+            
+    def SetCustomSensor(self,height:np.int32,width:np.int32):
+        print('Now setting custom sensor to %d Active Columns and %d Active Rows'%(width,height))
+        self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramActiveWidth,width)
+        self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramActiveHeight,height)
+        self.Commit()
 
     def Commit(self,*,printMessage: bool=True):
         paramArray = ctypes.pointer(ctypes.c_int(0))
@@ -295,17 +341,15 @@ class Camera():
         self.picamLib.Picam_SetParameterLargeIntegerValue(self.dev,paramFrames,frameCount)    #setting with dev handle commits to physical device if successful
         #even though FullData will not be used, need to set shape for ROI parsing in ProcessData
         self.SetupFullData(1)
-        
+                
         #circ buffer so we can run for a long time without needing to allocate memory for all of it
         #the buffer array and the data structure should be global or class properties so they remain in scope when the
-        #function returns   
+        #function returns        
         widthNominal = np.floor(512*1024*1024/self.rStride.value)
         if widthNominal < 100:                    #if 512MB not enough for 100 frames, allocate for 100 frames
             buffWidth = self.rStride.value*100
         else:
-            #buffWidth = int(widthNominal)*self.rStride.value
             buffWidth = np.int32(512*1024*1024)
-        print(buffWidth)
         self.circBuff = ctypes.ARRAY(ctypes.c_ubyte,buffWidth)()
         self.aBuf.memory = ctypes.addressof(self.circBuff)
         self.aBuf.memory_size = ctypes.c_longlong(buffWidth)
@@ -315,7 +359,7 @@ class Camera():
         #lines for internal callback        
         self.acqCallback = CMPFUNC(self.AcquisitionUpdated)
         self.picamLib.PicamAdvanced_RegisterForAcquisitionUpdated(self.dev, self.acqCallback)
-        self.picamLib.Picam_StartAcquisition(self.dev)
+        self.picamLib.Picam_StartAcquisition(self.dev)        
         print('Acquisition of %d frames asynchronously started'%(frameCount.value))
 
     def ReturnData(self):
