@@ -117,7 +117,7 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
     if display_min < 1:
         display_min = 1
     if display_max <1:
-        display_max = 1  
+        display_max = 1 
         
     ax.clear()
     #plotting
@@ -157,8 +157,8 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
                 sat = np.argwhere(data==2**bits-1)
                 ax.scatter(sat[:,1],sat[:,0],color='red',s=10)
     axName = '%s, Frame %d'%(name,frame)
-    ax.set_title(axName)
-    plt.draw()
+    ax.set_title(axName)    
+    plt.show()
 
 def ParseXmlForRegion(xmlStr, region):
     startX = -1
@@ -250,7 +250,7 @@ def box_select_callback(eclick, erelease, axis, wl, name):
     # axis.imshow(data,origin='upper',vmin=display_min,vmax=display_max,cmap='gray')
     
     WriteStats(axis, statsString)
-    plt.draw()
+    plt.show()
         
 #callback for line selection
 def StatsLinePlot(xmin, xmax, axis, wl):
@@ -264,10 +264,11 @@ def StatsLinePlot(xmin, xmax, axis, wl):
     fwhm = FWHM(regionDat)
     statsString = 'Region Mean: %0.2f\n Region Std: %0.2f\nFWHM: %0.3f pix'%(mean,dev,fwhm)
     WriteStats(axis, statsString)
-    plt.draw()
+    plt.show()
     
 #matplotlib widget for box selection
 def RectSelect(axis, wl, name):
+    print('here')
     return RectangleSelector(axis, lambda eclick, erelease: box_select_callback(eclick, erelease, axis, wl, name),
                                        drawtype='box', useblit=True,
                                        button=[1, 3],  # disable middle button
@@ -600,8 +601,11 @@ if __name__=="__main__":
     
     #use tk for file dialog
     root = tk.Tk()
-    filenames = filedialog.askopenfilenames(title='Select Spe Files',filetypes=[('spe files','*.spe')])
+    filenames = filedialog.askopenfilenames(title='Select Spe Files',filetypes=[('spe files','*.spe'),('spe files','*.SPE')])
     root.withdraw()
+
+    #makes figures spawn in individual threads
+    plt.ion()
     
     for i in range(len(filenames)): #originally intended to open multiple files in one kernel, but slider doesn't seem to connect to multiple figs.
                                     #for comparison of multiple images, open each in separate kernel
@@ -627,5 +631,6 @@ if __name__=="__main__":
         if np.size(dataTotal.Get(i),1)>1:
             RSTotal.Add(RectSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))
         else:
-            SSTotal.Add(SpanSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))
-        
+            SSTotal.Add(SpanSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))        
+    print('Press Enter to end script')
+    input()
