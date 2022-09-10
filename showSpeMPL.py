@@ -18,6 +18,7 @@ import warnings
 from scipy import interpolate
 from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
+import signal
 
 #generic container class for the various objects used in this script
 class Container:
@@ -105,7 +106,7 @@ def FWHM(data):  #pass in a line (1D array)
     
 
 def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=-1, xBound2: int=-1, yBound1: int=-1, yBound2: int=-1):     #pass in frame
-    global bits, bg  
+    global bits, bg, fontTitle, fontLabels  
     flatData = data.flatten()
     #image contrast adjustments
     if xBound1 > 0 and xBound2 > 10 and yBound1 > 0 and yBound2 > 10:
@@ -125,13 +126,13 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
         ax.grid()
         if len(wave) > 10 and pixAxis==False:
             ax.plot(wave,data[0])
-            ax.set_xlabel('Wavelength (nm)')
+            ax.set_xlabel('Wavelength (nm)',fontsize=fontLabels)
             ax.set(xlim=(wave[0],wave[-1]))
         else:
             ax.plot(data[0])
-            ax.set_xlabel('Pixels')
+            ax.set_xlabel('Pixels',fontsize=fontLabels)
             ax.set(xlim=(0,np.size(data[0])))
-        ax.set_ylabel('Intensity (counts)')
+        ax.set_ylabel('Intensity (counts)',fontsize=fontLabels)
     else:
         # colorMap = 'gray'
         # if bg==False:
@@ -144,11 +145,11 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
             #     aspect = 0.25
             aspect = (waveRange/np.size(data,0))/1.75
             ax.imshow(data,vmin=display_min,vmax=display_max,cmap='gray',extent=[wave[0],wave[-1],np.size(data,0),0],aspect=aspect)
-            ax.set(xlabel='Wavelength (nm)')
+            ax.set_xlabel('Wavelength (nm)',fontsize=fontLabels)
         else:
             ax.imshow(data,origin='upper',vmin=display_min,vmax=display_max,cmap='gray')
-            ax.set(xlabel='Column')
-        ax.set(ylabel='Row')
+            ax.set_xlabel('Column',fontsize=fontLabels)
+        ax.set_ylabel('Row',fontsize=fontLabels)
         if bg==False:
             if np.min(data) <= 0:
                 zeros = np.argwhere(data==0)
@@ -157,7 +158,9 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
                 sat = np.argwhere(data==2**bits-1)
                 ax.scatter(sat[:,1],sat[:,0],color='red',s=10)
     axName = '%s, Frame %d'%(name,frame)
-    ax.set_title(axName)    
+    ax.set_title(axName, fontsize=fontTitle)
+    for label in (ax.get_xticklabels() + ax.get_yticklabels()):
+        label.set_fontsize(fontLabels)
     plt.show()
 
 def ParseXmlForRegion(xmlStr, region):
@@ -214,10 +217,11 @@ def parseSpe(filename,*,suppress: bool=True):
 
 #display helpers
 def WriteStats(axis, string):
+    global fontStats
     #clear previous text object
     for txt in axis.texts:
         txt.set_visible(False)
-    axis.text(0,1.15,string, fontsize=10, verticalalignment='top', color = 'r', transform=axis.transAxes)
+    axis.text(0,1.15,string, fontsize=fontStats, verticalalignment='top', color = 'r', transform=axis.transAxes)
     
 
 def GetStats(data, x1, x2, y1, y2):
@@ -268,7 +272,6 @@ def StatsLinePlot(xmin, xmax, axis, wl):
     
 #matplotlib widget for box selection
 def RectSelect(axis, wl, name):
-    print('here')
     return RectangleSelector(axis, lambda eclick, erelease: box_select_callback(eclick, erelease, axis, wl, name),
                                        drawtype='box', useblit=True,
                                        button=[1, 3],  # disable middle button
@@ -598,6 +601,11 @@ if __name__=="__main__":
     bg = False
     bits = 16
     currFrame = 1
+    waitTime = 5   #wait n secs for user input at the end and then end program
+    #font sizes (global)
+    fontTitle = 36
+    fontLabels = 24
+    fontStats = 18
     
     #use tk for file dialog
     root = tk.Tk()
@@ -623,7 +631,8 @@ if __name__=="__main__":
         PrintSelectedXmlEntries(xmlTotal.Get(i))
         wlTotal.Add(w)
         axTotal.Add(figTotal.Get(i).add_subplot(111))              
-        MPSliderTotal.Add(SliderGen(axTotal.Get(i),framesMax))        
+        MPSliderTotal.Add(SliderGen(axTotal.Get(i),framesMax))
+        MPSliderTotal.Get(i).label.set_size(fontLabels)        
         plotData(dataTotal.Get(i)[0,:,:],axTotal.Get(i),wlTotal.Get(i),nameSplit,currFrame,pixAxis=pixelAxis)        
         #register slider to callback
         MPSliderConnect.Add(MPSliderTotal.Get(i).on_changed((lambda val: update_frame(val,dataTotal.Get(i),figTotal.Get(i),axTotal.Get(i),wlTotal.Get(i),nameSplit))))
@@ -632,5 +641,6 @@ if __name__=="__main__":
             RSTotal.Add(RectSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))
         else:
             SSTotal.Add(SpanSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))        
+    
     print('Press Enter to end script')
     input()
