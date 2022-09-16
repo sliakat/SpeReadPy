@@ -10,3 +10,15 @@ code was tested with:
 - numpy 1.21.4
 - opencv-python 4.5.4.60
 - PICam 5.11.2
+
+also verified working with**:
+- Ubuntu LTS 22.04 (kernel 5.15.0-47-generic)
+- Python 3.10
+- numpy 1.23.2
+- opencv-python 4.6.0.66
+- PICam 5.12.3.2209
+**WE DO NOT OFFICIALLY SUPPORT ANY DISTRO OUTSIDE OF CENTOS7.
+WHILE I GOT PICAM TO WORK ON UBUNTU, THERE WERE PACKAGE CHANGES
+I HAD TO MAKE. IF YOU WANT TO RUN ON A NON-CENTOS7 DISTRO, YOU
+WILL NEED TO FIGURE OUT WHAT CHANGES ARE NEEDED FOR YOUR DISTRO**
+
