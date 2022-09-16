@@ -4,10 +4,4 @@ You can reach me at sabbir.liakat@teledyne.com with content suggestions
 Check the 'Linux' subfolder for an example of a Python class definition -- this is how one can go about building a "wrapper" to meet their needs.
 Although the folder is titled 'Linux', a small change will allow the code to run on Windows as well.
 
-I may record instructions videos demonstrating use of scripts I post. Videos will be stored on the Teledyne Princeton Instruments ftp server.
-Links to videos will be added to this readme.
-
-Video tutorials (unfortunately the ftp is undergoing maintenance and these are no longer available).
-1. ctypes_ManualCirc (video was accidentally split into 2 as 'F5' used to run Py script was also OBS hotkey!):
-  -ftp://ftp.princetoninstruments.com/Public/TechSupport/SL/Automation/Webinar/PiCam/ctypes_ManualCirc.Part1.mp4
-  -ftp://ftp.princetoninstruments.com/Public/TechSupport/SL/Automation/Webinar/PiCam/ctypes_ManualCirc.Part2.mp4
+The content in 'Linux' has evolved into my main area of focus for different experiments, for both Windows and Linux. It is half wrapper, half testbed. Please check the content in there to get started with callng PIcam with Python. I deleted some of the older content that was stale and of poorer quality.
