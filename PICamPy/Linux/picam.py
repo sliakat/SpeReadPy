@@ -6,6 +6,7 @@ import numpy as np
 import os
 import cv2
 import threading
+import time
 
 
 os.environ["GENICAM_ROOT_V2_4"] = "/opt/pleora/ebus_sdk/x86_64/lib/genicam/"    #declaration needed for Linux SDK
@@ -47,26 +48,27 @@ def SetupDisplay(numRows,numCols,windowName):
         cv2.resizeWindow(windowName,winWidth,winHeight)
         cv2.moveWindow(windowName, 100,100)
 
-def DisplayImage(imData, windowName):        #data needs to be passed in correct shape
+def DisplayImage(imData, windowName):        #data needs to be passed in correct shape    
     normData = cv2.normalize(imData,None,alpha=0, beta=65535, norm_type=cv2.NORM_MINMAX)
     cv2.imshow(windowName, normData)
-    cv2.waitKey(50)    #cap opencv refresh at 20fps for stability. May be able to keep up faster on higher powered machines. Increase if stability issues.
     
 #this will run in its own thread
 def AcquireHelper(camera):
     dat = availableData(0,0)
     aStatus=acqStatus(False,0,0)
-    camera.picamLib.Picam_StartAcquisition(camera.cam)
+    camera.picamLib.Picam_StartAcquisition(camera.dev)
     print('Acquisition Started, %0.2f readouts/sec...'%camera.readRate.value)
     #start a do-while
-    camera.picamLib.Picam_WaitForAcquisitionUpdate(camera.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
+    camera.picamLib.Picam_WaitForAcquisitionUpdate(camera.dev,-1,ctypes.byref(dat),ctypes.byref(aStatus))
     camera.ProcessData(dat, camera.rStride.value)
     #while part
     while(aStatus.running):
-        camera.picamLib.Picam_WaitForAcquisitionUpdate(camera.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
+        camera.picamLib.Picam_WaitForAcquisitionUpdate(camera.dev,-1,ctypes.byref(dat),ctypes.byref(aStatus))
         camera.runningStatus = aStatus.running
         if dat.readout_count > 0:                    
             camera.ProcessData(dat, camera.rStride.value)
+        #add 50ms sleep in this thread to test if calling ProcessData fewer times leads to less jitter in display
+
 
 class camIDStruct(ctypes.Structure):
     _fields_=[
@@ -136,10 +138,10 @@ class Camera():
         self.Initialize()
 
     def AcquisitionUpdated(self, device, available, status):    #PICam will launch callback in another thread
-        with lock:
-            if status.contents.running:
-                self.ProcessData(available.contents, self.rStride.value, saveAll = False)                    
-            self.runningStatus = status.contents.running
+        #with lock:
+        if status.contents.running:
+            self.ProcessData(available.contents, self.rStride.value, saveAll = False)                    
+        self.runningStatus = status.contents.running
         return 0
     
     #this ended up as a generic clearing function
@@ -260,26 +262,45 @@ class Camera():
 
     #this only works for 16-bit data, need to modify divisor to 4 for >16-bit. I will update to a more generic version at a later time.
     def ProcessData(self, data, readStride,*,saveAll: bool=True):
-        x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_uint16))
-        #get ROIs for more generic processing when there are multiple ROIs -- assumes no metada -> will need additional offset code for that                
-        roiOffset = 0
-        for k in range(0, len(self.fullData)):            
-            roiCols = np.shape(self.fullData[k])[2]
-            roiRows = np.shape(self.fullData[k])[1]
-            #print(roiCols, roiRows)         
-            readCounter = 0
-            for i in range(0,data.readout_count):    #readout by readout            
-                offset = np.int32((i * readStride) / 2) + roiOffset
-                readoutDat = np.asarray(x[offset:int(roiCols*roiRows + offset)],dtype=np.uint16)
-                readoutDat = np.reshape(readoutDat, (roiRows, roiCols))
-                if saveAll:     
-                    self.fullData[k][readCounter + self.counter,:,:] = readoutDat
-                #self.counter += 1
-                if i == data.readout_count-1 and k == 0:    #return most recent readout (normalized) to use for displaying, always ROI 1
-                    self.newestFrame = readoutDat
-                readCounter += 1
-                #print(offset)
-            roiOffset = roiOffset + np.int32(roiCols*roiRows)
+        with lock:
+            #start = time.perf_counter_ns()
+            #print(data.readout_count)
+            #copy entire RO buffer to np array
+            x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_uint16))#size of full readout
+            xAlloc = ctypes.c_uint16*np.int32(readStride/2)*data.readout_count
+            addr = ctypes.addressof(x.contents)
+            numpyRO = np.copy(np.frombuffer(xAlloc.from_address(addr),dtype=np.uint16)) 
+            #print('Buffer copy time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))           
+            if data.readout_count > 0:                
+                #this part processes only the final frame for display
+                roiCols = np.shape(self.fullData[0])[2]
+                roiRows = np.shape(self.fullData[0])[1]
+                offsetA = np.int32((data.readout_count-1) * (readStride / 2)) + 0
+                #print(offsetA)     
+                readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]            
+                self.newestFrame = np.reshape(readoutDat, (roiRows, roiCols))
+            #print('Total preview time %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+
+        if saveAll and data.readout_count > 0:
+            #this part goes readout by readout
+            #get ROIs for more generic processing when there are multiple ROIs -- assumes no metada -> will need additional offset code for that                
+            roiOffset = 0
+            for k in range(0, len(self.fullData)):            
+                roiCols = np.shape(self.fullData[k])[2]
+                roiRows = np.shape(self.fullData[k])[1]
+                #print(roiCols, roiRows)         
+                readCounter = 0
+                for i in range(0,data.readout_count):    #readout by readout
+                    #start = time.perf_counter_ns()
+                    offsetA = np.int32((i * readStride) / 2) + roiOffset
+                    readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]    
+                    self.fullData[k][readCounter + self.counter,:,:] = np.reshape(readoutDat, (roiRows, roiCols))
+                    #self.counter += 1
+                    """ if i == data.readout_count-1 and k == 0:    #return most recent readout (normalized) to use for displaying, always ROI 1
+                        self.newestFrame = readoutDat """
+                    readCounter += 1
+                    #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+                roiOffset = roiOffset + np.int32(roiCols*roiRows)
         self.counter += data.readout_count
     
     #helper to configure final data buffer before acquire -- this can be used to loop through ROIs later
@@ -308,6 +329,20 @@ class Camera():
             if self.display:
                 SetupDisplay(self.numRows, self.numCols, self.windowName)
             self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))
+
+            #adding ring buffering so that large number of frames can still be collected if saving
+            #same as in AcquireCB()
+            self.picamLib.PicamAdvanced_GetCameraDevice(self.cam, ctypes.byref(self.dev))
+            widthNominal = np.floor(512*1024*1024/self.rStride.value)
+            if widthNominal < 100:                    #if 512MB not enough for 100 frames, allocate for 100 frames
+                buffWidth = self.rStride.value*100
+            else:
+                buffWidth = np.int32(512*1024*1024)
+            self.circBuff = ctypes.ARRAY(ctypes.c_ubyte,buffWidth)()
+            self.aBuf.memory = ctypes.addressof(self.circBuff)
+            self.aBuf.memory_size = ctypes.c_longlong(buffWidth)
+            self.picamLib.PicamAdvanced_SetAcquisitionBuffer(self.dev, ctypes.byref(self.aBuf))
+
             acqThread = threading.Thread(target=AcquireHelper, args=(self,))
             acqThread.start()    #data processing will be in a different thread than the display
 
@@ -319,8 +354,9 @@ class Camera():
         self.picamLib.Picam_IsAcquisitionRunning(self.cam, ctypes.byref(runStatus))
         self.runningStatus = runStatus
         while self.runningStatus:
-            if self.display and len(self.newestFrame) > 0:                                    
+            if self.display and len(self.newestFrame) > 0:                                  
                 DisplayImage(self.newestFrame, self.windowName)
+            cv2.waitKey(33)
         print('Acquisition stopped. %d readouts obtained.'%(self.counter))
         try:
             self.picamLib.PicamAdvanced_UnregisterForAcquisitionUpdated(self.dev, self.acqCallback)
@@ -361,6 +397,29 @@ class Camera():
         self.picamLib.PicamAdvanced_RegisterForAcquisitionUpdated(self.dev, self.acqCallback)
         self.picamLib.Picam_StartAcquisition(self.dev)        
         print('Acquisition of %d frames asynchronously started'%(frameCount.value))
+
+    #niche function for user-specific test
+    def TimeBetweenAcqs(self, iters:np.int32=3):
+        #declare some needed variables and structs
+        start=0
+        dat = availableData(0,0)
+        aStatus=acqStatus(False,0,0)
+        #set to acquire large number of frames so that acquisition doesn't stop before Stop called.
+        self.picamLib.Picam_SetParameterLargeIntegerValue(self.cam,paramFrames,50)
+        self.Commit()
+        runStatus = ctypes.c_int(0)
+        for i in range(0,iters):
+            self.picamLib.Picam_StartAcquisition(self.cam)
+            if i>0:
+                print('Time between stop and start: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+            time.sleep(3)
+            self.picamLib.Picam_StopAcquisition(self.cam)
+            #start timer once Stop has been called
+            start = time.perf_counter_ns()            
+            self.picamLib.Picam_WaitForAcquisitionUpdate(self.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
+            #next iteration will start once acquisition has stopped -- if needed, the aStatus from Wait 
+            #can be used to verify that it has actually stopped.
+
 
     def ReturnData(self):
         return self.fullData
