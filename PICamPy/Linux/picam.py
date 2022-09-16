@@ -69,6 +69,12 @@ def AcquireHelper(camera):
             camera.ProcessData(dat, camera.rStride.value)
         #add 50ms sleep in this thread to test if calling ProcessData fewer times leads to less jitter in display
 
+#any key press to stop an acquisition - run as a daemon thread
+#thread sits waiting for an input, if other threads finish, this exits
+def Stop(camera):
+    input()
+    camera.picamLib.Picam_StopAcquisition(camera.dev)
+    print('Key pressed during acquisition -- acquisition will stop.')
 
 class camIDStruct(ctypes.Structure):
     _fields_=[
@@ -397,6 +403,8 @@ class Camera():
         self.picamLib.PicamAdvanced_RegisterForAcquisitionUpdated(self.dev, self.acqCallback)
         self.picamLib.Picam_StartAcquisition(self.dev)        
         print('Acquisition of %d frames asynchronously started'%(frameCount.value))
+        stopThread = threading.Thread(target=Stop, daemon=True, args=(self,))
+        stopThread.start()
 
     #niche function for user-specific test
     def TimeBetweenAcqs(self, iters:np.int32=3):
