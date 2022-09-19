@@ -25,6 +25,8 @@ paramExpose=ctypes.c_int(calcParam(2,2,23))        #PicamParameter_ExposureTime
 paramActiveWidth=ctypes.c_int(calcParam(1,2,1))
 paramActiveHeight=ctypes.c_int(calcParam(1,2,2))
 paramVerticalShiftRate=ctypes.c_int(calcParam(2,3,13))
+paramAdcSpeed=ctypes.c_int(calcParam(2,3,33))
+paramAdcQuality=ctypes.c_int(calcParam(4,3,36))
 
 #opencv related functions
 def WindowSize(numRows,numCols):
@@ -119,6 +121,17 @@ class collectionConstraint(ctypes.Structure):
         ('severity', ctypes.c_int),
         ('values_array', ctypes.c_void_p),
         ('values_count', ctypes.c_int)]
+
+class validationResult(ctypes.Structure):
+    _fields_=[
+        ('is_valid', ctypes.c_bool),
+        ('failed_parameter', ctypes.c_int),
+        ('failed_error_constraint_scope', ctypes.c_int),
+        ('failed_warning_constraint_scope', ctypes.c_int),
+        ('error_constraining_parameter_array', ctypes.c_void_p),
+        ('error_constraining_parameter_count', ctypes.c_int),
+        ('warning_constraining_parameter_array', ctypes.c_void_p),
+        ('warning_constraining_parameter_count', ctypes.c_int)]
 
 
 class Camera():
@@ -224,25 +237,129 @@ class Camera():
             self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, ctypes.byref(rois))
             self.GetFirstROI()   #call this to reset the numRows and numCols for display
             self.Commit()
+
+    #find the fastest ADC speed the camera can handle and re-commit any necessary parameters based on constraints
+    #assume that AdcQuality is the only thing that needs to be checked for match w/ capable and required.
+    def SetFastestADCSpeed(self):
+        speedConstObj = ctypes.c_void_p(0)
+        speedReqObj = ctypes.c_void_p(0)
+        adcSpeed = ctypes.c_double(0)
+        adcSpeedReq = ctypes.c_double(0)
+        self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcSpeed,1,ctypes.byref(speedConstObj))  #1: capable
+        self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcSpeed,2,ctypes.byref(speedReqObj))  #2: required
+        speedConstObj = ctypes.cast(speedConstObj,ctypes.POINTER(collectionConstraint))
+        adcSpeed.value = ctypes.cast(speedConstObj[0].values_array,ctypes.POINTER(ctypes.c_double))[0] #fastest
+        speedReqObj = ctypes.cast(speedReqObj,ctypes.POINTER(collectionConstraint))
+        #print(speedReqObj[0].values_count)
+        print('Setting to fastest ADC Speed...', end='')
+        self.picamLib.Picam_SetParameterFloatingPointValue(self.cam,paramAdcSpeed,adcSpeed)
+        self.picamLib.Picam_GetParameterFloatingPointValue(self.cam,paramAdcSpeed,ctypes.byref(adcSpeed))
+        print(' ADC Speed set to %0.3f MHz'%(adcSpeed.value))
+        match = False
+        #check to see if the capable value matches any from required. If not, need to find required ADC Quality
+        for i in range(0,speedReqObj[0].values_count):
+            adcSpeedReq.value = ctypes.cast(speedReqObj[0].values_array,ctypes.POINTER(ctypes.c_double))[i]
+            if adcSpeedReq.value == adcSpeed.value:
+                match = True
+                break
+        if match == False:
+            print('\tADC Quality needs to change.')
+            qualCapObj = ctypes.c_void_p(0)
+            errCt = ctypes.c_int(0)
+            qual = ctypes.c_double(0)
+            self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcQuality,1,ctypes.byref(qualCapObj))
+            qualCapObj = ctypes.cast(qualCapObj,ctypes.POINTER(collectionConstraint))
+            #loop through capable qualities until finding the one that can be validated
+            matchQual = False
+            for i in range(0,qualCapObj[0].values_count):
+                qual.value = ctypes.cast(qualCapObj[0].values_array,ctypes.POINTER(ctypes.c_double))[i]
+                self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramAdcQuality,ctypes.c_int(np.int32(qual.value)))
+                valObj = ctypes.c_void_p(0)
+                self.picamLib.PicamAdvanced_ValidateParameter(self.cam, paramAdcSpeed, ctypes.byref(valObj))
+                valObj = ctypes.cast(valObj,ctypes.POINTER(validationResult))
+                if valObj[0].is_valid:
+                    matchQual = True
+                    enumStr = ctypes.c_char_p()
+                    qualInt = ctypes.c_int(0)
+                    self.picamLib.Picam_DestroyValidationResult(valObj)
+                    self.picamLib.Picam_GetParameterIntegerValue(self.cam,paramAdcQuality,ctypes.byref(qualInt))
+                    self.picamLib.Picam_GetEnumerationString(8, qualInt, ctypes.byref(enumStr)) #8: PicamEnumeratedType_AdcQuality
+                    print('\tADC Quality changed to %s.'%(enumStr.value))
+                    self.picamLib.Picam_DestroyString(enumStr)
+                    break
+                self.picamLib.Picam_DestroyValidationResult(valObj)
+            if matchQual == False:
+                print('\tCould not find correct parameter changes. Will commit fastest speed for current quality.')
+            self.picamLib.Picam_DestroyCollectionConstraints(qualCapObj)
+            #print('\tADC Quality needs to change to %s'%(enumStr.value))
+            
+
+        self.CommitAndChange()
+        self.picamLib.Picam_DestroyCollectionConstraints(speedConstObj)
+        self.picamLib.Picam_DestroyCollectionConstraints(speedReqObj)
             
     def SetCustomSensor(self,height:np.int32,width:np.int32):
         print('Now setting custom sensor to %d Active Columns and %d Active Rows'%(width,height))
         self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramActiveWidth,width)
         self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramActiveHeight,height)
-        self.Commit()
+        self.CommitAndChange()
 
     def Commit(self,*,printMessage: bool=True):
-        paramArray = ctypes.pointer(ctypes.c_int(0))
+        #paramArray = ctypes.pointer(ctypes.c_int(0))
+        paramArray = ctypes.c_void_p(0)
         failedCount = ctypes.c_int(1)
         self.picamLib.Picam_CommitParameters(self.cam, ctypes.byref(paramArray), ctypes.byref(failedCount))
         if failedCount.value > 0:
             print('Failed to commit %d parameters. Cannot acquire.'%(failedCount.value))
+            self.picamLib.Picam_DestroyParameters(paramArray)
             return False
         else:
             self.GetReadRate()
             if printMessage:
                 print('\tCommit successful! Current readout rate: %0.2f readouts/sec'%(self.readRate.value))
+            self.picamLib.Picam_DestroyParameters(paramArray)
             return True
+    
+    #attempts to change parameters that fail to commit based on constraints
+    #example is when ADC speed changes and the current bit depth no longer applies
+    #this implementation will only check for int, large int, and floating param times, and will assume collection constraint
+    def CommitAndChange(self):
+        paramArray = ctypes.c_void_p(0)
+        failedCount = ctypes.c_int(1)
+        self.picamLib.Picam_CommitParameters(self.cam, ctypes.byref(paramArray), ctypes.byref(failedCount))
+        paramArray = ctypes.cast(paramArray,ctypes.POINTER(ctypes.c_int))
+        #print(failedCount.value)
+        if failedCount.value > 0:
+            print('Changing the following parameters to allow a successful commit:')
+        for i in range(0,failedCount.value):
+            #print('\tFailed Param: %d'%(paramArray[i]))
+            paramV = ctypes.c_int(0)
+            enumStr = ctypes.c_char_p()
+            self.picamLib.Picam_GetEnumerationString(6, paramArray[i], ctypes.byref(enumStr))   #6 = PicamEnumeratedType_Parameter
+            self.picamLib.Picam_GetParameterValueType(self.cam,paramArray[i],ctypes.byref(paramV))
+            #print(paramV.value)
+            collConstObj = ctypes.c_void_p(0)
+            paramValue = ctypes.c_double(0)
+            self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramArray[i],2,ctypes.byref(collConstObj))
+            collConstObj = ctypes.cast(collConstObj,ctypes.POINTER(collectionConstraint))
+            paramValue.value = ctypes.cast(collConstObj[0].values_array,ctypes.POINTER(ctypes.c_double))[0]   
+            match paramV.value:
+                case 1:
+                    self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramArray[i],ctypes.c_int(np.int32(paramValue.value)))
+                case 2:
+                    self.picamLib.Picam_SetParameterFloatingPointValue(self.cam,paramArray[i],paramValue)
+                case 3:
+                    self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramArray[i],ctypes.c_int(np.int32(paramValue.value)))
+                case 4:
+                    self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramArray[i],ctypes.c_int(np.int32(paramValue.value)))
+                case 5:
+                    self.picamLib.Picam_SetParameterLargeIntegerValue(self.cam,paramArray[i],ctypes.c_int(np.int64(paramValue.value)))                
+            print('\t%s changed to %d'%(enumStr.value, paramValue.value))
+            self.picamLib.Picam_DestroyCollectionConstraints(collConstObj)
+            self.picamLib.Picam_DestroyString(enumStr)
+        self.picamLib.Picam_DestroyParameters(paramArray)
+        self.Commit(printMessage=False)
+
 
     def OpenFirstCamera(self,*,model: int=57): #if a connected camera is found, opens the first one, otherwise opens a demo        
         if self.picamLib.Picam_OpenFirstCamera(ctypes.byref(self.cam)) > 0: #try opening live cam
@@ -308,6 +425,7 @@ class Camera():
                     #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
                 roiOffset = roiOffset + np.int32(roiCols*roiRows)
         self.counter += data.readout_count
+        #print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
     
     #helper to configure final data buffer before acquire -- this can be used to loop through ROIs later
     def SetupFullData(self, frames):
@@ -323,11 +441,13 @@ class Camera():
             print('ROI %d shape: '%(i+1), np.shape(self.fullData[i]))
         self.picamLib.Picam_DestroyRois(rois)
 
+    #-s mode
     def Acquire(self,*,frames: int=1):    #will launch the AcquireHelper function in a new thread when user calls it
         frameCount = ctypes.c_int(0)
         frameCount.value = frames
         self.picamLib.Picam_SetParameterLargeIntegerValue(self.cam,paramFrames,frameCount)
-        if self.Commit():
+        #0 is for infinite preview, don't allow for -s mode
+        if self.Commit() and frameCount.value > 0:
             self.ResetCount()
             #set up total data objects
             #self.totalData = np.zeros((frameCount.value,self.numRows,self.numCols))
@@ -372,39 +492,41 @@ class Camera():
         cv2.destroyAllWindows()
 
     #since we're not saving data here, this is not generalized for multi-ROI -- the first ROI will be displayed
+    #-p mode
     def AcquireCB(self,*,frames: int=5):    #utilizes Advanced API to demonstrate callbacks, returns immediately
-        if self.display:
-            SetupDisplay(self.numRows, self.numCols, self.windowName)
-        self.ResetCount()
-        self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))        
         self.picamLib.PicamAdvanced_GetCameraDevice(self.cam, ctypes.byref(self.dev))
         frameCount = ctypes.c_int(0)
         frameCount.value = frames
         self.picamLib.Picam_SetParameterLargeIntegerValue(self.dev,paramFrames,frameCount)    #setting with dev handle commits to physical device if successful
-        #even though FullData will not be used, need to set shape for ROI parsing in ProcessData
-        self.SetupFullData(1)
-                
-        #circ buffer so we can run for a long time without needing to allocate memory for all of it
-        #the buffer array and the data structure should be global or class properties so they remain in scope when the
-        #function returns        
-        widthNominal = np.floor(512*1024*1024/self.rStride.value)
-        if widthNominal < 100:                    #if 512MB not enough for 100 frames, allocate for 100 frames
-            buffWidth = self.rStride.value*100
-        else:
-            buffWidth = np.int32(512*1024*1024)
-        self.circBuff = ctypes.ARRAY(ctypes.c_ubyte,buffWidth)()
-        self.aBuf.memory = ctypes.addressof(self.circBuff)
-        self.aBuf.memory_size = ctypes.c_longlong(buffWidth)
-        self.picamLib.PicamAdvanced_SetAcquisitionBuffer(self.dev, ctypes.byref(self.aBuf))
-        
-        CMPFUNC = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(availableData), ctypes.POINTER(acqStatus))
-        #lines for internal callback        
-        self.acqCallback = CMPFUNC(self.AcquisitionUpdated)
-        self.picamLib.PicamAdvanced_RegisterForAcquisitionUpdated(self.dev, self.acqCallback)
-        self.picamLib.Picam_StartAcquisition(self.dev)        
-        print('Acquisition of %d frames asynchronously started'%(frameCount.value))
-        stopThread = threading.Thread(target=Stop, daemon=True, args=(self,))
-        stopThread.start()
+        if self.Commit() and frameCount.value >= 0:
+            if self.display:
+                SetupDisplay(self.numRows, self.numCols, self.windowName)
+            self.ResetCount()
+            self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))
+            #even though FullData will not be used, need to set shape for ROI parsing in ProcessData
+            self.SetupFullData(1)
+                    
+            #circ buffer so we can run for a long time without needing to allocate memory for all of it
+            #the buffer array and the data structure should be global or class properties so they remain in scope when the
+            #function returns        
+            widthNominal = np.floor(512*1024*1024/self.rStride.value)
+            if widthNominal < 100:                    #if 512MB not enough for 100 frames, allocate for 100 frames
+                buffWidth = self.rStride.value*100
+            else:
+                buffWidth = np.int32(512*1024*1024)
+            self.circBuff = ctypes.ARRAY(ctypes.c_ubyte,buffWidth)()
+            self.aBuf.memory = ctypes.addressof(self.circBuff)
+            self.aBuf.memory_size = ctypes.c_longlong(buffWidth)
+            self.picamLib.PicamAdvanced_SetAcquisitionBuffer(self.dev, ctypes.byref(self.aBuf))
+            
+            CMPFUNC = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(availableData), ctypes.POINTER(acqStatus))
+            #lines for internal callback        
+            self.acqCallback = CMPFUNC(self.AcquisitionUpdated)
+            self.picamLib.PicamAdvanced_RegisterForAcquisitionUpdated(self.dev, self.acqCallback)
+            self.picamLib.Picam_StartAcquisition(self.dev)        
+            print('Acquisition of %d frames asynchronously started'%(frameCount.value))
+            stopThread = threading.Thread(target=Stop, daemon=True, args=(self,))
+            stopThread.start()
 
     #niche function for user-specific test
     def TimeBetweenAcqs(self, iters:np.int32=3):
