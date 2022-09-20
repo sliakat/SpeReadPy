@@ -16,17 +16,23 @@ lock = threading.Lock()
 def calcParam(v,c,n):
     return (((c)<<24)+((v)<<16)+(n))
 
-#check picam.h for parameter definitions
+#check picam.h for parameter definitions -- maybe turn this into a dictionary so I don't need to use GetEnumString
 paramFrames = ctypes.c_int(calcParam(6,2,40))    #PicamParameter_ReadoutCount
 paramStride = ctypes.c_int(calcParam(1,1,45))    #PicamParameter_ReadoutStride
 paramROIs = ctypes.c_int(calcParam(5, 4, 37))    #PicamParameter_Rois
 paramReadRate=ctypes.c_int(calcParam(2,1,50))    #PicamParameter_ReadoutRateCalculation
 paramExpose=ctypes.c_int(calcParam(2,2,23))        #PicamParameter_ExposureTime
+paramRepetitiveGate=ctypes.c_int(calcParam(7,5,94))
 paramActiveWidth=ctypes.c_int(calcParam(1,2,1))
 paramActiveHeight=ctypes.c_int(calcParam(1,2,2))
 paramVerticalShiftRate=ctypes.c_int(calcParam(2,3,13))
 paramAdcSpeed=ctypes.c_int(calcParam(2,3,33))
 paramAdcQuality=ctypes.c_int(calcParam(4,3,36))
+paramSensorActiveWidth = ctypes.c_int(calcParam(1,1,59))
+paramSensorActiveHeight = ctypes.c_int(calcParam(1,1,60))
+paramSensorTemperatureReading = ctypes.c_int(calcParam(2,1,15))
+paramSensorTemperatureSetPoint = ctypes.c_int(calcParam(2,2,14))
+paramSensorTemperatureStatus = ctypes.c_int(calcParam(4,1,16))
 
 #opencv related functions
 def WindowSize(numRows,numCols):
@@ -114,6 +120,11 @@ class roisStruct(ctypes.Structure):
     _fields_=[
         ('roi_array', ctypes.c_void_p),
         ('roi_count', ctypes.c_int)]
+
+class picamPulse(ctypes.Structure):
+    _fields_=[
+        ('delay', ctypes.c_double),
+        ('width', ctypes.c_double)]
     
 class collectionConstraint(ctypes.Structure):
     _fields_=[
@@ -188,7 +199,8 @@ class Camera():
     def Uninitialize(self):
         self.picamLib.Picam_UninitializeLibrary()
 
-    def GetFirstROI(self):        #working with single ROI for basic demonstration
+    #calling this locks in the dimensions that will be displayed
+    def GetFirstROI(self):        
         rois = ctypes.c_void_p(0)        
         self.picamLib.Picam_GetParameterRoisValue(self.cam, paramROIs, ctypes.byref(rois))
         roisCast = ctypes.cast(rois,ctypes.POINTER(roisStruct))[0]
@@ -237,6 +249,45 @@ class Camera():
             self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, ctypes.byref(rois))
             self.GetFirstROI()   #call this to reset the numRows and numCols for display
             self.Commit()
+
+    #sets square (nxn) ROI in the center of the active sensor, assuming given dimension meets constraints
+    def SetCenterROI(self, dim: np.int32):
+        #get sensor active rows and cols
+        defRows = ctypes.c_int(0)
+        defCols = ctypes.c_int(0)
+        self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramSensorActiveWidth, ctypes.byref(defCols))
+        self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramSensorActiveHeight, ctypes.byref(defRows))
+        #print(defRows.value, defCols.value)
+        if dim <= defRows.value and dim <=defCols.value and dim >0:
+            newDim = ctypes.c_int(dim)
+            newX = ctypes.c_int(np.int32(np.floor(defCols.value/2 - dim/2)))
+            newY = ctypes.c_int(np.int32(np.floor(defRows.value/2 - dim/2)))
+            roiArray = ctypes.ARRAY(roiStruct, 1)()
+            roiArray[0] = roiStruct(newX.value, dim, 1, newY.value, dim, 1)
+            rois = roisStruct(ctypes.addressof(roiArray), 1)
+            self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, ctypes.byref(rois))
+            #now validate the ROI that was just set
+            valObj = ctypes.c_void_p(0)
+            self.picamLib.PicamAdvanced_ValidateParameter(self.cam, paramROIs, ctypes.byref(valObj))
+            valObj = ctypes.cast(valObj,ctypes.POINTER(validationResult))
+            #print(valObj[0].is_valid)
+            if valObj[0].is_valid:
+                print('Successfully changed ROI to ',end='')
+            else:
+                #get the default ROI
+                roisDef = ctypes.c_void_p(0)
+                self.picamLib.Picam_GetParameterRoisDefaultValue(self.cam, paramROIs, ctypes.byref(roisDef))
+                self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, roisDef)
+                self.picamLib.Picam_DestroyRois(roisDef)
+                print('Could not change ROI. ROI has defaulted back to ')
+            self.GetFirstROI()
+            print('%d (cols) x %d (rows)'%(self.numCols, self.numRows))
+            self.picamLib.Picam_DestroyValidationResult(valObj)
+            #print(newX.value, newY.value)
+            return
+        #this is the exit if something fails along the way
+        print('Could not attempt to set center ROI due to parameter and/or dimension mismatch.')
+        return
 
     #find the fastest ADC speed the camera can handle and re-commit any necessary parameters based on constraints
     #assume that AdcQuality is the only thing that needs to be checked for match w/ capable and required.
@@ -291,9 +342,6 @@ class Camera():
             if matchQual == False:
                 print('\tCould not find correct parameter changes. Will commit fastest speed for current quality.')
             self.picamLib.Picam_DestroyCollectionConstraints(qualCapObj)
-            #print('\tADC Quality needs to change to %s'%(enumStr.value))
-            
-
         self.CommitAndChange()
         self.picamLib.Picam_DestroyCollectionConstraints(speedConstObj)
         self.picamLib.Picam_DestroyCollectionConstraints(speedReqObj)
@@ -376,12 +424,53 @@ class Camera():
         print('\tFirst ROI: %d (cols) x %d (rows)'%(self.numCols,self.numRows))
         self.windowName = 'Readout from %s'%(self.camID.sensor_name.decode('utf-8'))
 
+    #for ICCD, treat input exposure as gate width (with default delay)
     def SetExposure(self, time):
+        exist = ctypes.c_bool(False)
         expTime = ctypes.c_double(0)
         expTime.value = time
-        self.picamLib.Picam_SetParameterFloatingPointValue(self.cam,paramExpose,expTime)
-        print('Trying to commit exposure time to %0.2f ms...'%(expTime.value),end='')
-        self.Commit(printMessage=True)
+        self.picamLib.Picam_DoesParameterExist(self.cam, paramExpose, ctypes.byref(exist))
+        if exist:
+            self.picamLib.Picam_SetParameterFloatingPointValue(self.cam,paramExpose,expTime)
+            print('Trying to commit exposure time to %0.2f ms... '%(expTime.value),end='')
+            self.Commit(printMessage=False)
+            self.picamLib.Picam_GetParameterFloatingPointValue(self.cam,paramExpose,ctypes.byref(expTime))
+            print('Exposure committed to %0.2f ms.'%(expTime.value))
+            return
+        #if exposure time doesn't exist, see if gate exists
+        self.picamLib.Picam_DoesParameterExist(self.cam, paramRepetitiveGate, ctypes.byref(exist))
+        if exist:
+            #use og pulse to get the delay and to keep track of the original setting
+            ogPulse = ctypes.c_void_p(0)
+            self.picamLib.Picam_GetParameterPulseValue(self.cam, paramRepetitiveGate, ctypes.byref(ogPulse))
+            ogPulse = ctypes.cast(ogPulse,ctypes.POINTER(picamPulse))
+            ogWidth = ogPulse[0].width
+            ogDelay = ogPulse[0].delay
+            #print('OG Pulse: %0.3f ns width, %0.3f ns delay'%(ogWidth, ogDelay))
+            newPulse = picamPulse(ogDelay, time*1e6)
+            self.picamLib.Picam_SetParameterPulseValue(self.cam, paramRepetitiveGate, ctypes.byref(newPulse))
+            print('Trying to commit gate width to %0.2f ns... '%(time*1e6),end='')
+
+            #validate the set parameter            
+            valObj = ctypes.c_void_p(0)
+            self.picamLib.PicamAdvanced_ValidateParameter(self.cam, paramRepetitiveGate, ctypes.byref(valObj))
+            valObj = ctypes.cast(valObj,ctypes.POINTER(validationResult))
+            #print(valObj[0].is_valid)
+            if not valObj[0].is_valid:
+                #if we can't validate, set the original pulse
+                self.picamLib.Picam_SetParameterPulseValue(self.cam, paramRepetitiveGate, ogPulse)
+
+            #now commit and check the pulse that was set to report to console
+            self.Commit(printMessage=False)
+            setPulse = ctypes.c_void_p(0)
+            self.picamLib.Picam_GetParameterPulseValue(self.cam, paramRepetitiveGate, ctypes.byref(setPulse))
+            setPulse = ctypes.cast(setPulse,ctypes.POINTER(picamPulse))
+            setWidth = setPulse[0].width
+            setDelay = setPulse[0].delay
+            print('Committed Pulse: %0.3f ns width, %0.3f ns delay'%(setWidth, setDelay))            
+            self.picamLib.Picam_DestroyPulses(ogPulse)
+            self.picamLib.Picam_DestroyPulses(setPulse)
+            self.picamLib.Picam_DestroyValidationResult(valObj)
 
     #this only works for 16-bit data, need to modify divisor to 4 for >16-bit. I will update to a more generic version at a later time.
     def ProcessData(self, data, readStride,*,saveAll: bool=True):
@@ -440,6 +529,16 @@ class Camera():
             self.fullData[i] = np.zeros([frames, roiRows, roiCols])
             print('ROI %d shape: '%(i+1), np.shape(self.fullData[i]))
         self.picamLib.Picam_DestroyRois(rois)
+    
+    def ReadTemperatureStatus(self):
+        tempStatus = {1: 'Unlocked', 2: 'Locked', 3: 'Faulted'}
+        sensorTemp = ctypes.c_double(0)
+        sensorLockStatus = ctypes.c_int(0)
+        sensorSetPt = ctypes.c_double(0)
+        self.picamLib.Picam_ReadParameterFloatingPointValue(self.cam, paramSensorTemperatureReading, ctypes.byref(sensorTemp))
+        self.picamLib.Picam_GetParameterFloatingPointValue(self.cam, paramSensorTemperatureSetPoint, ctypes.byref(sensorSetPt))
+        self.picamLib.Picam_ReadParameterIntegerValue(self.cam, paramSensorTemperatureStatus, ctypes.byref(sensorLockStatus))
+        print('*****\nSensor Temperature %0.2fC (%s). Set Point %0.2fC.\n*****'%(sensorTemp.value, tempStatus[sensorLockStatus.value], sensorSetPt.value))
 
     #-s mode
     def Acquire(self,*,frames: int=1):    #will launch the AcquireHelper function in a new thread when user calls it
@@ -468,6 +567,9 @@ class Camera():
             self.aBuf.memory = ctypes.addressof(self.circBuff)
             self.aBuf.memory_size = ctypes.c_longlong(buffWidth)
             self.picamLib.PicamAdvanced_SetAcquisitionBuffer(self.dev, ctypes.byref(self.aBuf))
+
+            #read camera temp right before acquisition
+            self.ReadTemperatureStatus()
 
             acqThread = threading.Thread(target=AcquireHelper, args=(self,))
             acqThread.start()    #data processing will be in a different thread than the display
@@ -523,6 +625,9 @@ class Camera():
             #lines for internal callback        
             self.acqCallback = CMPFUNC(self.AcquisitionUpdated)
             self.picamLib.PicamAdvanced_RegisterForAcquisitionUpdated(self.dev, self.acqCallback)
+
+            #read temperature before starting acqusition
+            self.ReadTemperatureStatus()
             self.picamLib.Picam_StartAcquisition(self.dev)        
             print('Acquisition of %d frames asynchronously started'%(frameCount.value))
             stopThread = threading.Thread(target=Stop, daemon=True, args=(self,))
