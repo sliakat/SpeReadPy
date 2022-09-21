@@ -539,7 +539,7 @@ class Camera():
     #function to process 16-bit data
     def ProcessData(self, data, readStride,*,saveAll: bool=True):
         with lock:
-            #start = time.perf_counter_ns()
+            start = time.perf_counter_ns()
             #copy entire RO buffer to np array
             x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_uint16))#size of full readout
             xAlloc = ctypes.c_uint16*np.int32(readStride/2)*data.readout_count
@@ -575,12 +575,12 @@ class Camera():
                     #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
                 roiOffset = roiOffset + np.int32(roiCols*roiRows)
         self.counter += data.readout_count
-        #print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+        print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
 
     #function to process 32-bit data (>16 bits: <=32 bits)
     def ProcessData32(self, data, readStride,*,saveAll: bool=True):
         with lock:
-            #start = time.perf_counter_ns()
+            start = time.perf_counter_ns()
             #print(data.readout_count)
             #copy entire RO buffer to np array
             x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_uint32))#size of full readout
@@ -592,7 +592,7 @@ class Camera():
                 #this part processes only the final frame for display
                 roiCols = np.shape(self.fullData[0])[2]
                 roiRows = np.shape(self.fullData[0])[1]
-                offsetA = np.int32((data.readout_count-1) * (readStride / 2)) + 0     
+                offsetA = np.int32((data.readout_count-1) * (readStride / 4)) + 0     
                 readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]            
                 self.newestFrame = np.reshape(readoutDat, (roiRows, roiCols))
             #print('Total preview time %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
@@ -607,7 +607,7 @@ class Camera():
                 readCounter = 0
                 for i in range(0,data.readout_count):    #readout by readout
                     #start = time.perf_counter_ns()
-                    offsetA = np.int32((i * readStride) / 2) + roiOffset
+                    offsetA = np.int32((i * readStride) / 4) + roiOffset
                     readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]
                     #the Write() worker daemon will fill in the fullData array from the queue
                     #the processing function is free to continue
@@ -616,7 +616,7 @@ class Camera():
                     #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
                 roiOffset = roiOffset + np.int32(roiCols*roiRows)
         self.counter += data.readout_count
-        #print('Total process time (%d bit data): %0.2f ms'%(self.bits, (time.perf_counter_ns() - start)/1e6))
+        print('Total process time (%d bit data): %0.2f ms'%(self.bits, (time.perf_counter_ns() - start)/1e6))
     
     #helper to configure final data buffer before acquire -- this can be used to loop through ROIs later
     def SetupFullData(self, frames):
@@ -643,7 +643,7 @@ class Camera():
         print('*****\nSensor Temperature %0.2fC (%s). Set Point %0.2fC.\n*****'%(sensorTemp.value, tempStatus[sensorLockStatus.value], sensorSetPt.value))
 
     #-s mode
-    def Acquire(self,*,frames: int=1):    #will launch the AcquireHelper function in a new thread when user calls it
+    def Acquire(self,*,frames: int=1, bufNomWidth: int=50):    #will launch the AcquireHelper function in a new thread when user calls it
         frameCount = ctypes.c_int(0)
         frameCount.value = frames
         self.picamLib.Picam_SetParameterLargeIntegerValue(self.cam,paramFrames,frameCount)
@@ -661,8 +661,8 @@ class Camera():
             #same as in AcquireCB()
             self.picamLib.PicamAdvanced_GetCameraDevice(self.cam, ctypes.byref(self.dev))
             widthNominal = np.floor(512*1024*1024/self.rStride.value)
-            if widthNominal < 50:                    #if 512MB not enough for 50 frames, allocate for 50 frames
-                buffWidth = self.rStride.value*50
+            if widthNominal < bufNomWidth:                    #user can input bufWidth (useful when testing large data formats)
+                buffWidth = self.rStride.value*bufNomWidth
             else:
                 buffWidth = np.int32(512*1024*1024)
             self.circBuff = ctypes.ARRAY(ctypes.c_ubyte,buffWidth)()
@@ -699,7 +699,7 @@ class Camera():
 
     #since we're not saving data here, this is not generalized for multi-ROI -- the first ROI will be displayed
     #-p mode
-    def AcquireCB(self,*,frames: int=5):    #utilizes Advanced API to demonstrate callbacks, returns immediately
+    def AcquireCB(self,*,frames: int=5, bufNomWidth: int=50):    #utilizes Advanced API to demonstrate callbacks, returns immediately
         self.picamLib.PicamAdvanced_GetCameraDevice(self.cam, ctypes.byref(self.dev))
         frameCount = ctypes.c_int(0)
         frameCount.value = frames
@@ -716,8 +716,8 @@ class Camera():
             #the buffer array and the data structure should be global or class properties so they remain in scope when the
             #function returns        
             widthNominal = np.floor(512*1024*1024/self.rStride.value)
-            if widthNominal < 50:                    #if 512MB not enough for 50 frames, allocate for 50 frames
-                buffWidth = self.rStride.value*50
+            if widthNominal < bufNomWidth:                    #user can input bufWidth (useful when testing large data formats)
+                buffWidth = self.rStride.value*bufNomWidth
             else:
                 buffWidth = np.int32(512*1024*1024)
             self.circBuff = ctypes.ARRAY(ctypes.c_ubyte,buffWidth)()
