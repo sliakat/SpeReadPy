@@ -328,59 +328,63 @@ class Camera():
     #find the fastest ADC speed the camera can handle and re-commit any necessary parameters based on constraints
     #assume that AdcQuality is the only thing that needs to be checked for match w/ capable and required.
     def SetFastestADCSpeed(self):
-        speedConstObj = ctypes.c_void_p(0)
-        speedReqObj = ctypes.c_void_p(0)
-        adcSpeed = ctypes.c_double(0)
-        adcSpeedReq = ctypes.c_double(0)
-        self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcSpeed,1,ctypes.byref(speedConstObj))  #1: capable
-        self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcSpeed,2,ctypes.byref(speedReqObj))  #2: required
-        speedConstObj = ctypes.cast(speedConstObj,ctypes.POINTER(collectionConstraint))
-        adcSpeed.value = ctypes.cast(speedConstObj[0].values_array,ctypes.POINTER(ctypes.c_double))[0] #fastest
-        speedReqObj = ctypes.cast(speedReqObj,ctypes.POINTER(collectionConstraint))
-        #print(speedReqObj[0].values_count)
-        print('Setting to fastest ADC Speed...', end='')
-        self.picamLib.Picam_SetParameterFloatingPointValue(self.cam,paramAdcSpeed,adcSpeed)
-        self.picamLib.Picam_GetParameterFloatingPointValue(self.cam,paramAdcSpeed,ctypes.byref(adcSpeed))
-        print(' ADC Speed set to %0.3f MHz'%(adcSpeed.value))
-        match = False
-        #check to see if the capable value matches any from required. If not, need to find required ADC Quality
-        for i in range(0,speedReqObj[0].values_count):
-            adcSpeedReq.value = ctypes.cast(speedReqObj[0].values_array,ctypes.POINTER(ctypes.c_double))[i]
-            if adcSpeedReq.value == adcSpeed.value:
-                match = True
-                break
-        if match == False:
-            print('\tADC Quality needs to change.')
-            qualCapObj = ctypes.c_void_p(0)
-            errCt = ctypes.c_int(0)
-            qual = ctypes.c_double(0)
-            self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcQuality,1,ctypes.byref(qualCapObj))
-            qualCapObj = ctypes.cast(qualCapObj,ctypes.POINTER(collectionConstraint))
-            #loop through capable qualities until finding the one that can be validated
-            matchQual = False
-            for i in range(0,qualCapObj[0].values_count):
-                qual.value = ctypes.cast(qualCapObj[0].values_array,ctypes.POINTER(ctypes.c_double))[i]
-                self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramAdcQuality,ctypes.c_int(np.int32(qual.value)))
-                valObj = ctypes.c_void_p(0)
-                self.picamLib.PicamAdvanced_ValidateParameter(self.cam, paramAdcSpeed, ctypes.byref(valObj))
-                valObj = ctypes.cast(valObj,ctypes.POINTER(validationResult))
-                if valObj[0].is_valid:
-                    matchQual = True
-                    enumStr = ctypes.c_char_p()
-                    qualInt = ctypes.c_int(0)
-                    self.picamLib.Picam_DestroyValidationResult(valObj)
-                    self.picamLib.Picam_GetParameterIntegerValue(self.cam,paramAdcQuality,ctypes.byref(qualInt))
-                    self.picamLib.Picam_GetEnumerationString(8, qualInt, ctypes.byref(enumStr)) #8: PicamEnumeratedType_AdcQuality
-                    print('\tADC Quality changed to %s.'%(enumStr.value))
-                    self.picamLib.Picam_DestroyString(enumStr)
+        #need to check for existence b/c COSMOS does not have AdcSpeed param
+        exist = ctypes.c_bool(False)
+        self.picamLib.Picam_DoesParameterExist(self.cam, paramAdcSpeed, ctypes.byref(exist))
+        if exist.value:
+            speedConstObj = ctypes.c_void_p(0)
+            speedReqObj = ctypes.c_void_p(0)
+            adcSpeed = ctypes.c_double(0)
+            adcSpeedReq = ctypes.c_double(0)
+            self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcSpeed,1,ctypes.byref(speedConstObj))  #1: capable
+            self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcSpeed,2,ctypes.byref(speedReqObj))  #2: required
+            speedConstObj = ctypes.cast(speedConstObj,ctypes.POINTER(collectionConstraint))
+            adcSpeed.value = ctypes.cast(speedConstObj[0].values_array,ctypes.POINTER(ctypes.c_double))[0] #fastest
+            speedReqObj = ctypes.cast(speedReqObj,ctypes.POINTER(collectionConstraint))
+            #print(speedReqObj[0].values_count)
+            print('Setting to fastest ADC Speed...', end='')
+            self.picamLib.Picam_SetParameterFloatingPointValue(self.cam,paramAdcSpeed,adcSpeed)
+            self.picamLib.Picam_GetParameterFloatingPointValue(self.cam,paramAdcSpeed,ctypes.byref(adcSpeed))
+            print(' ADC Speed set to %0.3f MHz'%(adcSpeed.value))
+            match = False
+            #check to see if the capable value matches any from required. If not, need to find required ADC Quality
+            for i in range(0,speedReqObj[0].values_count):
+                adcSpeedReq.value = ctypes.cast(speedReqObj[0].values_array,ctypes.POINTER(ctypes.c_double))[i]
+                if adcSpeedReq.value == adcSpeed.value:
+                    match = True
                     break
-                self.picamLib.Picam_DestroyValidationResult(valObj)
-            if matchQual == False:
-                print('\tCould not find correct parameter changes. Will commit fastest speed for current quality.')
-            self.picamLib.Picam_DestroyCollectionConstraints(qualCapObj)
-        self.CommitAndChange()
-        self.picamLib.Picam_DestroyCollectionConstraints(speedConstObj)
-        self.picamLib.Picam_DestroyCollectionConstraints(speedReqObj)
+            if match == False:
+                print('\tADC Quality needs to change.')
+                qualCapObj = ctypes.c_void_p(0)
+                errCt = ctypes.c_int(0)
+                qual = ctypes.c_double(0)
+                self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcQuality,1,ctypes.byref(qualCapObj))
+                qualCapObj = ctypes.cast(qualCapObj,ctypes.POINTER(collectionConstraint))
+                #loop through capable qualities until finding the one that can be validated
+                matchQual = False
+                for i in range(0,qualCapObj[0].values_count):
+                    qual.value = ctypes.cast(qualCapObj[0].values_array,ctypes.POINTER(ctypes.c_double))[i]
+                    self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramAdcQuality,ctypes.c_int(np.int32(qual.value)))
+                    valObj = ctypes.c_void_p(0)
+                    self.picamLib.PicamAdvanced_ValidateParameter(self.cam, paramAdcSpeed, ctypes.byref(valObj))
+                    valObj = ctypes.cast(valObj,ctypes.POINTER(validationResult))
+                    if valObj[0].is_valid:
+                        matchQual = True
+                        enumStr = ctypes.c_char_p()
+                        qualInt = ctypes.c_int(0)
+                        self.picamLib.Picam_DestroyValidationResult(valObj)
+                        self.picamLib.Picam_GetParameterIntegerValue(self.cam,paramAdcQuality,ctypes.byref(qualInt))
+                        self.picamLib.Picam_GetEnumerationString(8, qualInt, ctypes.byref(enumStr)) #8: PicamEnumeratedType_AdcQuality
+                        print('\tADC Quality changed to %s.'%(enumStr.value))
+                        self.picamLib.Picam_DestroyString(enumStr)
+                        break
+                    self.picamLib.Picam_DestroyValidationResult(valObj)
+                if matchQual == False:
+                    print('\tCould not find correct parameter changes. Will commit fastest speed for current quality.')
+                self.picamLib.Picam_DestroyCollectionConstraints(qualCapObj)
+            self.CommitAndChange()
+            self.picamLib.Picam_DestroyCollectionConstraints(speedConstObj)
+            self.picamLib.Picam_DestroyCollectionConstraints(speedReqObj)
 
     #sets custom sensor only -- need to handle ROI manually -- no validation added yet        
     def SetCustomSensor(self,height:np.int32,width:np.int32):
@@ -542,7 +546,7 @@ class Camera():
             start = time.perf_counter_ns()
             #copy entire RO buffer to np array
             x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_uint16))#size of full readout
-            xAlloc = ctypes.c_uint16*np.int32(readStride/2)*data.readout_count
+            xAlloc = ctypes.c_uint16*np.int64(readStride/2)*data.readout_count
             addr = ctypes.addressof(x.contents)
             numpyRO = np.copy(np.frombuffer(xAlloc.from_address(addr),dtype=np.uint16)) 
             #print('Buffer copy time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))           
@@ -550,8 +554,8 @@ class Camera():
                 #this part processes only the final frame for display
                 roiCols = np.shape(self.fullData[0])[2]
                 roiRows = np.shape(self.fullData[0])[1]
-                offsetA = np.int32((data.readout_count-1) * (readStride / 2)) + 0     
-                readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]            
+                offsetA = np.int64((data.readout_count-1) * (readStride / 2)) + 0     
+                readoutDat = numpyRO[offsetA:np.int64(roiCols*roiRows)+offsetA]            
                 self.newestFrame = np.reshape(readoutDat, (roiRows, roiCols))
             #print('Total preview time %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
 
@@ -565,15 +569,15 @@ class Camera():
                 readCounter = 0
                 for i in range(0,data.readout_count):    #readout by readout
                     #start = time.perf_counter_ns()
-                    offsetA = np.int32((i * readStride) / 2) + roiOffset
-                    readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]
+                    offsetA = np.int64((i * readStride) / 2) + roiOffset
+                    readoutDat = numpyRO[offsetA:np.int64(roiCols*roiRows)+offsetA]
                     #the Write() worker daemon will fill in the fullData array from the queue
                     #the processing function is free to continue
                     q.put([k, readCounter + self.counter, roiRows, roiCols, readoutDat])
                     #startA = time.perf_counter_ns()
                     readCounter += 1
                     #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
-                roiOffset = roiOffset + np.int32(roiCols*roiRows)
+                roiOffset = roiOffset + np.int64(roiCols*roiRows)
         self.counter += data.readout_count
         print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
 
@@ -584,7 +588,7 @@ class Camera():
             #print(data.readout_count)
             #copy entire RO buffer to np array
             x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_uint32))#size of full readout
-            xAlloc = ctypes.c_uint32*np.int32(readStride/4)*data.readout_count
+            xAlloc = ctypes.c_uint32*np.int64(readStride/4)*data.readout_count
             addr = ctypes.addressof(x.contents)
             numpyRO = np.copy(np.frombuffer(xAlloc.from_address(addr),dtype=np.uint32)) 
             #print('Buffer copy time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))           
@@ -592,7 +596,7 @@ class Camera():
                 #this part processes only the final frame for display
                 roiCols = np.shape(self.fullData[0])[2]
                 roiRows = np.shape(self.fullData[0])[1]
-                offsetA = np.int32((data.readout_count-1) * (readStride / 4)) + 0     
+                offsetA = np.int64((data.readout_count-1) * (readStride / 4)) + 0     
                 readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]            
                 self.newestFrame = np.reshape(readoutDat, (roiRows, roiCols))
             #print('Total preview time %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
@@ -607,8 +611,8 @@ class Camera():
                 readCounter = 0
                 for i in range(0,data.readout_count):    #readout by readout
                     #start = time.perf_counter_ns()
-                    offsetA = np.int32((i * readStride) / 4) + roiOffset
-                    readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]
+                    offsetA = np.int64((i * readStride) / 4) + roiOffset
+                    readoutDat = numpyRO[offsetA:np.int64(roiCols*roiRows)+offsetA]
                     #the Write() worker daemon will fill in the fullData array from the queue
                     #the processing function is free to continue
                     q.put([k, readCounter + self.counter, roiRows, roiCols, readoutDat])
@@ -688,7 +692,7 @@ class Camera():
         while self.runningStatus:
             if self.display and len(self.newestFrame) > 0:                                  
                 DisplayImage(self.newestFrame, self.windowName, self.bits)
-            cv2.waitKey(33)
+            cv2.waitKey(42) #~24fps, if it can keep up
         print('Acquisition stopped. %d readouts obtained.'%(self.counter))
         try:
             self.picamLib.PicamAdvanced_UnregisterForAcquisitionUpdated(self.dev, self.acqCallback)
