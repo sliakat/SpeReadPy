@@ -6,12 +6,14 @@ import numpy as np
 import os
 import cv2
 import threading
+import queue
 import time
 
 
 os.environ["GENICAM_ROOT_V2_4"] = "/opt/pleora/ebus_sdk/x86_64/lib/genicam/"    #declaration needed for Linux SDK
 
 lock = threading.Lock()
+q = queue.Queue()
 
 def calcParam(v,c,n):
     return (((c)<<24)+((v)<<16)+(n))
@@ -58,9 +60,10 @@ def SetupDisplay(numRows,numCols,windowName):
         cv2.moveWindow(windowName, 100,100)
 
 def DisplayImage(imData, windowName, bits):        #data needs to be passed in correct shape
-    vmax = pow(2,bits)-1
+    vmax = pow(2,16)-1
     if bits >16:
         #needed because opencv can't display uint32
+        #vmax = pow(2,bits)-1
         divFactor = pow(2,bits-16)
         imData = (imData/divFactor).astype(np.uint16)
     normData = cv2.normalize(imData,None,alpha=0, beta=vmax, norm_type=cv2.NORM_MINMAX)    
@@ -95,6 +98,23 @@ def Stop(camera):
     input()
     camera.picamLib.Picam_StopAcquisition(camera.dev)
     print('Key pressed during acquisition -- acquisition will stop.')
+    print('Mean of most recently processed frame: %0.3f cts'%(np.mean(camera.newestFrame)))
+
+#daemon for writing data - idea is to speed up process as much as possible, and writing can lag at the end, if needed.
+def Write(camera):
+    time.sleep(.001)
+    while True:
+        queueItem = q.get()
+        roiNum = queueItem[0]
+        frame = queueItem[1]
+        roiRows = queueItem[2]
+        roiCols = queueItem[3]
+        readoutDat = queueItem[4]
+
+        #to my surprise, doing this is actually faster on large data than using np.put w/ linear index
+        camera.fullData[roiNum][frame] = np.reshape(readoutDat, (roiRows, roiCols))
+        q.task_done()
+
 
 class camIDStruct(ctypes.Structure):
     _fields_=[
@@ -520,7 +540,6 @@ class Camera():
     def ProcessData(self, data, readStride,*,saveAll: bool=True):
         with lock:
             #start = time.perf_counter_ns()
-            #print(data.readout_count)
             #copy entire RO buffer to np array
             x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_uint16))#size of full readout
             xAlloc = ctypes.c_uint16*np.int32(readStride/2)*data.readout_count
@@ -531,8 +550,7 @@ class Camera():
                 #this part processes only the final frame for display
                 roiCols = np.shape(self.fullData[0])[2]
                 roiRows = np.shape(self.fullData[0])[1]
-                offsetA = np.int32((data.readout_count-1) * (readStride / 2)) + 0
-                #print(offsetA)     
+                offsetA = np.int32((data.readout_count-1) * (readStride / 2)) + 0     
                 readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]            
                 self.newestFrame = np.reshape(readoutDat, (roiRows, roiCols))
             #print('Total preview time %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
@@ -543,20 +561,16 @@ class Camera():
             roiOffset = 0
             for k in range(0, len(self.fullData)):            
                 roiCols = np.shape(self.fullData[k])[2]
-                roiRows = np.shape(self.fullData[k])[1]
-                #print(roiCols, roiRows)         
+                roiRows = np.shape(self.fullData[k])[1]         
                 readCounter = 0
                 for i in range(0,data.readout_count):    #readout by readout
                     #start = time.perf_counter_ns()
                     offsetA = np.int32((i * readStride) / 2) + roiOffset
                     readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]
+                    #the Write() worker daemon will fill in the fullData array from the queue
+                    #the processing function is free to continue
+                    q.put([k, readCounter + self.counter, roiRows, roiCols, readoutDat])
                     #startA = time.perf_counter_ns()
-                    # this step takes up the brunt of the time on larger data. Will try to think of a more optimal approach.  
-                    self.fullData[k][readCounter + self.counter] = np.reshape(readoutDat, (roiRows, roiCols))
-                    #print('Array add and reshape: %0.2f ms'%((time.perf_counter_ns() - startA)/1e6))
-                    #self.counter += 1
-                    """ if i == data.readout_count-1 and k == 0:    #return most recent readout (normalized) to use for displaying, always ROI 1
-                        self.newestFrame = readoutDat """
                     readCounter += 1
                     #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
                 roiOffset = roiOffset + np.int32(roiCols*roiRows)
@@ -578,8 +592,7 @@ class Camera():
                 #this part processes only the final frame for display
                 roiCols = np.shape(self.fullData[0])[2]
                 roiRows = np.shape(self.fullData[0])[1]
-                offsetA = np.int32((data.readout_count-1) * (readStride / 2)) + 0
-                #print(offsetA)     
+                offsetA = np.int32((data.readout_count-1) * (readStride / 2)) + 0     
                 readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]            
                 self.newestFrame = np.reshape(readoutDat, (roiRows, roiCols))
             #print('Total preview time %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
@@ -590,17 +603,15 @@ class Camera():
             roiOffset = 0
             for k in range(0, len(self.fullData)):            
                 roiCols = np.shape(self.fullData[k])[2]
-                roiRows = np.shape(self.fullData[k])[1]
-                #print(roiCols, roiRows)         
+                roiRows = np.shape(self.fullData[k])[1]         
                 readCounter = 0
                 for i in range(0,data.readout_count):    #readout by readout
                     #start = time.perf_counter_ns()
                     offsetA = np.int32((i * readStride) / 2) + roiOffset
-                    readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]    
-                    self.fullData[k][readCounter + self.counter,:,:] = np.reshape(readoutDat, (roiRows, roiCols))
-                    #self.counter += 1
-                    """ if i == data.readout_count-1 and k == 0:    #return most recent readout (normalized) to use for displaying, always ROI 1
-                        self.newestFrame = readoutDat """
+                    readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]
+                    #the Write() worker daemon will fill in the fullData array from the queue
+                    #the processing function is free to continue
+                    q.put([k, readCounter + self.counter, roiRows, roiCols, readoutDat])
                     readCounter += 1
                     #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
                 roiOffset = roiOffset + np.int32(roiCols*roiRows)
@@ -664,6 +675,8 @@ class Camera():
 
             acqThread = threading.Thread(target=AcquireHelper, args=(self,))
             acqThread.start()    #data processing will be in a different thread than the display
+            writeThread = threading.Thread(target=Write, daemon=True, args=(self,))
+            writeThread.start()
 
     #display will only show first ROI
     def DisplayCameraData(self):    #this will block and then unregister callback (if applicable) when done
@@ -748,6 +761,7 @@ class Camera():
 
 
     def ReturnData(self):
+        q.join()
         return self.fullData
 
     def Close(self):
