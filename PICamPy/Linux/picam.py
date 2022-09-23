@@ -110,9 +110,12 @@ def Write(camera):
         roiRows = queueItem[2]
         roiCols = queueItem[3]
         readoutDat = queueItem[4]
-
-        #to my surprise, doing this is actually faster on large data than using np.put w/ linear index
-        camera.fullData[roiNum][frame] = np.reshape(readoutDat, (roiRows, roiCols))
+        if camera.saveDisk:
+            camera.fileHandle.write(readoutDat.tobytes())
+            pass
+        else:            
+            #to my surprise, doing this is actually faster on large data than using np.put w/ linear index
+            camera.fullData[roiNum][frame] = np.reshape(readoutDat, (roiRows, roiCols))
         q.task_done()
 
 
@@ -198,15 +201,16 @@ class Camera():
         self.circBuff = ctypes.ARRAY(ctypes.c_ubyte,0)()
         self.aBuf = acqBuf(0,0)
         self.roisPy=[]
+        self.saveDisk = False
         self.Initialize()
 
     def AcquisitionUpdated(self, device, available, status):    #PICam will launch callback in another thread
         #with lock:
         if status.contents.running:
             if self.bits <=16:
-                self.ProcessData(available.contents, self.rStride.value, saveAll = False)
+                self.ProcessData(available.contents, self.rStride.value, saveData = False)
             elif self.bits > 16 and self.bits <=32:
-                self.ProcessData32(available.contents, self.rStride.value, saveAll = False)
+                self.ProcessData32(available.contents, self.rStride.value, saveData = False)
         self.runningStatus = status.contents.running
         return 0
     
@@ -541,7 +545,7 @@ class Camera():
             self.picamLib.Picam_DestroyValidationResult(valObj)
 
     #function to process 16-bit data
-    def ProcessData(self, data, readStride,*,saveAll: bool=True):
+    def ProcessData(self, data, readStride,*,saveData: bool=True):
         with lock:
             start = time.perf_counter_ns()
             #copy entire RO buffer to np array
@@ -559,7 +563,7 @@ class Camera():
                 self.newestFrame = np.reshape(readoutDat, (roiRows, roiCols))
             #print('Total preview time %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
 
-        if saveAll and data.readout_count > 0:
+        if saveData and data.readout_count > 0:
             #this part goes readout by readout
             #get ROIs for more generic processing when there are multiple ROIs -- assumes no metada -> will need additional offset code for that                
             roiOffset = 0
@@ -573,16 +577,17 @@ class Camera():
                     readoutDat = numpyRO[offsetA:np.int64(roiCols*roiRows)+offsetA]
                     #the Write() worker daemon will fill in the fullData array from the queue
                     #the processing function is free to continue
+
                     q.put([k, readCounter + self.counter, roiRows, roiCols, readoutDat])
                     #startA = time.perf_counter_ns()
                     readCounter += 1
                     #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
                 roiOffset = roiOffset + np.int64(roiCols*roiRows)
         self.counter += data.readout_count
-        print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+        #print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
 
     #function to process 32-bit data (>16 bits: <=32 bits)
-    def ProcessData32(self, data, readStride,*,saveAll: bool=True):
+    def ProcessData32(self, data, readStride,*,saveData: bool=True):
         with lock:
             start = time.perf_counter_ns()
             #print(data.readout_count)
@@ -601,7 +606,7 @@ class Camera():
                 self.newestFrame = np.reshape(readoutDat, (roiRows, roiCols))
             #print('Total preview time %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
 
-        if saveAll and data.readout_count > 0:
+        if saveData and data.readout_count > 0:
             #this part goes readout by readout
             #get ROIs for more generic processing when there are multiple ROIs -- assumes no metada -> will need additional offset code for that                
             roiOffset = 0
@@ -620,7 +625,7 @@ class Camera():
                     #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
                 roiOffset = roiOffset + np.int32(roiCols*roiRows)
         self.counter += data.readout_count
-        print('Total process time (%d bit data): %0.2f ms'%(self.bits, (time.perf_counter_ns() - start)/1e6))
+        #print('Total process time (%d bit data): %0.2f ms'%(self.bits, (time.perf_counter_ns() - start)/1e6))
     
     #helper to configure final data buffer before acquire -- this can be used to loop through ROIs later
     def SetupFullData(self, frames):
@@ -646,8 +651,9 @@ class Camera():
         self.picamLib.Picam_ReadParameterIntegerValue(self.cam, paramSensorTemperatureStatus, ctypes.byref(sensorLockStatus))
         print('*****\nSensor Temperature %0.2fC (%s). Set Point %0.2fC.\n*****'%(sensorTemp.value, tempStatus[sensorLockStatus.value], sensorSetPt.value))
 
-    #-s mode
-    def Acquire(self,*,frames: int=1, bufNomWidth: int=50):    #will launch the AcquireHelper function in a new thread when user calls it
+    #-s mode, default saves to numpy array in memory, -d mode optionally write to disk (and not keep in memory)
+    def Acquire(self,*,frames: int=1, bufNomWidth: int=50, saveDisk: bool=False):    #will launch the AcquireHelper function in a new thread when user calls it
+        self.saveDisk = saveDisk
         frameCount = ctypes.c_int(0)
         frameCount.value = frames
         self.picamLib.Picam_SetParameterLargeIntegerValue(self.cam,paramFrames,frameCount)
@@ -656,7 +662,15 @@ class Camera():
             self.ResetCount()
             #set up total data objects
             #self.totalData = np.zeros((frameCount.value,self.numRows,self.numCols))
-            self.SetupFullData(frames)
+            if self.saveDisk:
+                #if saving to disk, just set up 1 dummy array for ROI info while parsing.
+                self.SetupFullData(1)
+                timeStr = time.strftime('%Y%d%m-%H%M%S',time.gmtime())
+                #filename will have info for ROI 1 -- if multiple ROIs the dims will not apply
+                self.filename = 'data' + timeStr + '-%dx%d-%d-%dbit.raw'%(np.shape(self.fullData[0])[2],np.shape(self.fullData[0])[1],frames,self.bits)
+                self.fileHandle = open(self.filename, 'wb')
+            else:
+                self.SetupFullData(frames)
             if self.display:
                 SetupDisplay(self.numRows, self.numCols, self.windowName)
             self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))
@@ -763,10 +777,15 @@ class Camera():
             #next iteration will start once acquisition has stopped -- if needed, the aStatus from Wait 
             #can be used to verify that it has actually stopped.
 
-
     def ReturnData(self):
-        q.join()
-        return self.fullData
+        start = time.perf_counter_ns()
+        q.join()        
+        if self.saveDisk:
+            self.fileHandle.close()
+            print('Disk writing lag: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+            return 'Data saved to %s'%(self.filename)
+        else:
+            return self.fullData
 
     def Close(self):
         self.ResetCount()
