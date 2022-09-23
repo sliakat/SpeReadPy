@@ -112,7 +112,6 @@ def Write(camera):
         readoutDat = queueItem[4]
         if camera.saveDisk:
             camera.fileHandle.write(readoutDat.tobytes())
-            pass
         else:            
             #to my surprise, doing this is actually faster on large data than using np.put w/ linear index
             camera.fullData[roiNum][frame] = np.reshape(readoutDat, (roiRows, roiCols))
