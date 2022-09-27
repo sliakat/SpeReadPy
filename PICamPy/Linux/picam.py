@@ -74,6 +74,7 @@ def AcquireHelper(camera):
     dat = availableData(0,0)
     aStatus=acqStatus(False,0,0)
     camera.picamLib.Picam_StartAcquisition(camera.dev)
+    camera.acqTimer = time.perf_counter_ns()
     print('Acquisition Started, %0.2f readouts/sec...'%camera.readRate.value)
     #start a do-while
     camera.picamLib.Picam_WaitForAcquisitionUpdate(camera.dev,-1,ctypes.byref(dat),ctypes.byref(aStatus))
@@ -124,6 +125,11 @@ class camIDStruct(ctypes.Structure):
         ('computer_interface', ctypes.c_int),
         ('sensor_name', ctypes.c_char * 64),
         ('serial_number', ctypes.c_char * 64)]
+
+class firmwareDetail(ctypes.Structure):
+    _fields_=[
+        ('name', ctypes.c_char * 64),
+        ('detail', ctypes.c_char * 256)]
 
 class availableData(ctypes.Structure):
     _fields_=[
@@ -201,11 +207,19 @@ class Camera():
         self.aBuf = acqBuf(0,0)
         self.roisPy=[]
         self.saveDisk = False
+        self.eventTimer = 0
+        self.acqTimer = 0
         self.Initialize()
 
     def AcquisitionUpdated(self, device, available, status):    #PICam will launch callback in another thread
         #with lock:
         if status.contents.running:
+            if self.counter > 0:
+                eventTime = (time.perf_counter_ns() - self.eventTimer) /1e6
+                if status.contents.readout_rate > 0:
+                    expectedTime = (1/status.contents.readout_rate) * 1e3
+                #print('Event latency: %0.3f ms'%(np.abs(eventTime-expectedTime)))
+            self.eventTimer = time.perf_counter_ns()
             if self.bits <=16:
                 self.ProcessData(available.contents, self.rStride.value, saveData = False)
             elif self.bits > 16 and self.bits <=32:
@@ -217,9 +231,17 @@ class Camera():
     def ResetCount(self):
         self.counter = 0
         self.totalData = np.array([])
+        self.acqTimer = 0
 
     def GetReadRate(self):
         self.picamLib.Picam_GetParameterFloatingPointValue(self.cam,paramReadRate,ctypes.byref(self.readRate))
+
+    def EnumString(self, type:int, value:int):
+        enumStr = ctypes.c_char_p()
+        self.picamLib.Picam_GetEnumerationString(type, value, ctypes.byref(enumStr))
+        outStr = enumStr.value.decode('utf-8')
+        self.picamLib.Picam_DestroyString(enumStr)
+        return outStr
 
     def Initialize(self):
         initCheck = ctypes.c_bool(0)
@@ -329,65 +351,105 @@ class Camera():
         return
 
     #find the fastest ADC speed the camera can handle and re-commit any necessary parameters based on constraints
-    #assume that AdcQuality is the only thing that needs to be checked for match w/ capable and required.
     def SetFastestADCSpeed(self):
         #need to check for existence b/c COSMOS does not have AdcSpeed param
         exist = ctypes.c_bool(False)
         self.picamLib.Picam_DoesParameterExist(self.cam, paramAdcSpeed, ctypes.byref(exist))
         if exist.value:
             speedConstObj = ctypes.c_void_p(0)
-            speedReqObj = ctypes.c_void_p(0)
             adcSpeed = ctypes.c_double(0)
-            adcSpeedReq = ctypes.c_double(0)
             self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcSpeed,1,ctypes.byref(speedConstObj))  #1: capable
-            self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcSpeed,2,ctypes.byref(speedReqObj))  #2: required
             speedConstObj = ctypes.cast(speedConstObj,ctypes.POINTER(collectionConstraint))
             adcSpeed.value = ctypes.cast(speedConstObj[0].values_array,ctypes.POINTER(ctypes.c_double))[0] #fastest
-            speedReqObj = ctypes.cast(speedReqObj,ctypes.POINTER(collectionConstraint))
-            #print(speedReqObj[0].values_count)
-            print('Setting to fastest ADC Speed...', end='')
-            self.picamLib.Picam_SetParameterFloatingPointValue(self.cam,paramAdcSpeed,adcSpeed)
-            self.picamLib.Picam_GetParameterFloatingPointValue(self.cam,paramAdcSpeed,ctypes.byref(adcSpeed))
-            print(' ADC Speed set to %0.3f MHz'%(adcSpeed.value))
-            match = False
-            #check to see if the capable value matches any from required. If not, need to find required ADC Quality
-            for i in range(0,speedReqObj[0].values_count):
-                adcSpeedReq.value = ctypes.cast(speedReqObj[0].values_array,ctypes.POINTER(ctypes.c_double))[i]
-                if adcSpeedReq.value == adcSpeed.value:
-                    match = True
-                    break
-            if match == False:
-                print('\tADC Quality needs to change.')
-                qualCapObj = ctypes.c_void_p(0)
-                errCt = ctypes.c_int(0)
-                qual = ctypes.c_double(0)
-                self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcQuality,1,ctypes.byref(qualCapObj))
-                qualCapObj = ctypes.cast(qualCapObj,ctypes.POINTER(collectionConstraint))
-                #loop through capable qualities until finding the one that can be validated
-                matchQual = False
-                for i in range(0,qualCapObj[0].values_count):
-                    qual.value = ctypes.cast(qualCapObj[0].values_array,ctypes.POINTER(ctypes.c_double))[i]
-                    self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramAdcQuality,ctypes.c_int(np.int32(qual.value)))
-                    valObj = ctypes.c_void_p(0)
-                    self.picamLib.PicamAdvanced_ValidateParameter(self.cam, paramAdcSpeed, ctypes.byref(valObj))
-                    valObj = ctypes.cast(valObj,ctypes.POINTER(validationResult))
-                    if valObj[0].is_valid:
-                        matchQual = True
-                        enumStr = ctypes.c_char_p()
-                        qualInt = ctypes.c_int(0)
-                        self.picamLib.Picam_DestroyValidationResult(valObj)
-                        self.picamLib.Picam_GetParameterIntegerValue(self.cam,paramAdcQuality,ctypes.byref(qualInt))
-                        self.picamLib.Picam_GetEnumerationString(8, qualInt, ctypes.byref(enumStr)) #8: PicamEnumeratedType_AdcQuality
-                        print('\tADC Quality changed to %s.'%(enumStr.value))
-                        self.picamLib.Picam_DestroyString(enumStr)
-                        break
-                    self.picamLib.Picam_DestroyValidationResult(valObj)
-                if matchQual == False:
-                    print('\tCould not find correct parameter changes. Will commit fastest speed for current quality.')
-                self.picamLib.Picam_DestroyCollectionConstraints(qualCapObj)
-            self.CommitAndChange()
+            print('Setting to fastest ADC Speed...')
             self.picamLib.Picam_DestroyCollectionConstraints(speedConstObj)
-            self.picamLib.Picam_DestroyCollectionConstraints(speedReqObj)
+            self.SetADCSpeed(adcSpeed.value)            
+
+    #sets ADC speed per the user input. Looks for match of input to capable values to within 15kHz.
+    #traverses through ADC Quality to find the right match, if speed does not match required constraint.
+    def SetADCSpeed(self,speed:np.float64):
+        exist = ctypes.c_bool(False)
+        self.picamLib.Picam_DoesParameterExist(self.cam, paramAdcSpeed, ctypes.byref(exist))
+        if exist.value:
+            speedMatch = False
+            speedCapObj = ctypes.c_void_p(0)            
+            adcSpeedChosen = ctypes.c_double(0)   
+            adcSpeedLoop = ctypes.c_double(0)         
+            self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcSpeed,1,ctypes.byref(speedCapObj))  #1: capable
+            speedCapObj = ctypes.cast(speedCapObj,ctypes.POINTER(collectionConstraint))
+            print('Valid ADC Speeds for this camera (in MHz):\n\t',end='')
+            #loop through the capable speed values to see if any match with the input (to within 15kHz)
+            for i in range(0,speedCapObj[0].values_count):                
+                adcSpeedLoop.value = ctypes.cast(speedCapObj[0].values_array,ctypes.POINTER(ctypes.c_double))[i]
+                print('%0.3f'%(adcSpeedLoop.value), end='')
+                #formatting stuff
+                if i >= 0 and i < speedCapObj[0].values_count - 1:
+                    print(', ', end='')
+                diff = np.abs(adcSpeedLoop.value-speed)
+                #print(diff)
+                if diff <=0.015:
+                    speedMatch = True
+                    adcSpeedChosen.value = adcSpeedLoop.value
+                    #print('Chosen ADC Speed: %0.3f MHz'%(adcSpeedChosen.value))                    
+            print('\n')                
+            #if we get a match, set the speed, then check if quality change is needed to commit          
+            if speedMatch == True:
+                #set the ADC speed
+                adcSpeedSet = ctypes.c_double(0)
+                print('Attempting to set ADC Speed to %0.3f MHz... '%(adcSpeedChosen.value),end='')
+                self.picamLib.Picam_SetParameterFloatingPointValue(self.cam,paramAdcSpeed,adcSpeedChosen)
+                self.picamLib.Picam_GetParameterFloatingPointValue(self.cam,paramAdcSpeed,ctypes.byref(adcSpeedSet))
+                print('ADC Speed set to %0.3f MHz'%(adcSpeedSet.value))
+
+                #now check for necessary quality changes (if quality exists)
+                reqMatch = False
+                speedReqObj = ctypes.c_void_p(0)
+                self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcSpeed,2,ctypes.byref(speedReqObj))  #2: required
+                speedReqObj = ctypes.cast(speedReqObj,ctypes.POINTER(collectionConstraint))
+                adcSpeedReq = ctypes.c_double(0)
+                for i in range(0,speedReqObj[0].values_count):
+                    adcSpeedReq.value = ctypes.cast(speedReqObj[0].values_array,ctypes.POINTER(ctypes.c_double))[i]
+                    if adcSpeedReq.value == adcSpeedChosen.value:
+                        reqMatch = True
+                        break
+                if not reqMatch:
+                    self.picamLib.Picam_DoesParameterExist(self.cam, paramAdcQuality, ctypes.byref(exist))
+                    if exist.value:
+                        print('\tADC Quality needs to change.')
+                        qualMatch = False
+                        qualCapObj = ctypes.c_void_p(0)
+                        errCt = ctypes.c_int(0)
+                        qual = ctypes.c_double(0)
+                        self.picamLib.Picam_GetParameterCollectionConstraint(self.cam,paramAdcQuality,1,ctypes.byref(qualCapObj))
+                        qualCapObj = ctypes.cast(qualCapObj,ctypes.POINTER(collectionConstraint))
+                        for i in range(0,qualCapObj[0].values_count):
+                            qual.value = ctypes.cast(qualCapObj[0].values_array,ctypes.POINTER(ctypes.c_double))[i]
+                            self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramAdcQuality,ctypes.c_int(np.int32(qual.value)))
+                            valObj = ctypes.c_void_p(0)
+                            #need to validate on speed becuase quality is hierarchically superior and will always pass
+                            self.picamLib.PicamAdvanced_ValidateParameter(self.cam, paramAdcSpeed, ctypes.byref(valObj))
+                            valObj = ctypes.cast(valObj,ctypes.POINTER(validationResult))
+                            if valObj[0].is_valid:
+                                qualMatch = True
+                                enumStr = ctypes.c_char_p()
+                                qualInt = ctypes.c_int(0)
+                                self.picamLib.Picam_DestroyValidationResult(valObj)
+                                self.picamLib.Picam_GetParameterIntegerValue(self.cam,paramAdcQuality,ctypes.byref(qualInt))
+                                self.picamLib.Picam_GetEnumerationString(8, qualInt, ctypes.byref(enumStr)) #8: PicamEnumeratedType_AdcQuality
+                                print('\tADC Quality changed to %s.'%(enumStr.value.decode('utf-8')))
+                                self.picamLib.Picam_DestroyString(enumStr)
+                                break
+                            self.picamLib.Picam_DestroyValidationResult(valObj)
+                        if not qualMatch:
+                            print('\tCould not find correct parameter changes. Will commit fastest speed for current constraints.')
+                        self.picamLib.Picam_DestroyCollectionConstraints(qualCapObj)
+                self.picamLib.Picam_DestroyCollectionConstraints(speedReqObj)
+                self.CommitAndChange()
+            else:
+                print('Camera does not contain an ADC Speed that matches the input.')
+            self.picamLib.Picam_DestroyCollectionConstraints(speedCapObj)
+        else:
+            print('ADC Speed parameter does not exist for this camera.')
 
     #sets custom sensor only -- need to handle ROI manually -- no validation added yet        
     def SetCustomSensor(self,height:np.int32,width:np.int32):
@@ -473,11 +535,24 @@ class Camera():
                     self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramArray[i],ctypes.c_int(np.int32(paramValue.value)))
                 case 5:
                     self.picamLib.Picam_SetParameterLargeIntegerValue(self.cam,paramArray[i],ctypes.c_int(np.int64(paramValue.value)))                
-            print('\t%s changed to %d'%(enumStr.value, paramValue.value))
+            print('\t%s changed to %d'%(enumStr.value.decode('utf-8'), paramValue.value))
             self.picamLib.Picam_DestroyCollectionConstraints(collConstObj)
             self.picamLib.Picam_DestroyString(enumStr)
         self.picamLib.Picam_DestroyParameters(paramArray)
         self.Commit(printMessage=False)
+
+    #use after self.camID has been populated with a valid camera id (i.e. through OpenCamera())
+    def PrintCameraFirmware(self):
+        fwArray = ctypes.c_void_p(0)
+        fwCount = ctypes.c_int(0)
+        self.picamLib.Picam_GetFirmwareDetails(ctypes.byref(self.camID), ctypes.byref(fwArray), ctypes.byref(fwCount))
+        if fwCount.value > 0:
+            fwArray = ctypes.cast(fwArray,ctypes.POINTER(firmwareDetail))
+            print('%%%%%\nCamera Firmware:')
+            for i in range(0,fwCount.value):
+                print('%s\t%s'%(fwArray[i].name.decode('utf-8').ljust(24), fwArray[i].detail.decode('utf-8')))
+            print('%%%%%')
+        self.picamLib.Picam_DestroyFirmwareDetails(fwArray)
 
 
     def OpenFirstCamera(self,*,model: int=57): #if a connected camera is found, opens the first one, otherwise opens a demo        
@@ -494,6 +569,68 @@ class Camera():
         self.GetFirstROI()
         print('\tFirst ROI: %d (cols) x %d (rows)'%(self.numCols,self.numRows))
         self.windowName = 'Readout from %s'%(self.camID.sensor_name.decode('utf-8'))
+
+    #lists available cameras, then asks user for input
+    #option to open demo camera with 0
+    def OpenCamera(self):
+        idArray = ctypes.c_void_p(0)
+        idCount = ctypes.c_int(0)
+        returnVal = False
+        self.picamLib.Picam_GetAvailableCameraIDs(ctypes.byref(idArray), ctypes.byref(idCount))
+        idArray = ctypes.cast(idArray,ctypes.POINTER(camIDStruct))
+        print('*****\n%d Teledyne SciCam camera(s) detected:'%(idCount.value))
+        for i in range(0,idCount.value):
+            currID = idArray[i]
+            print('[%d]: %s, Serial #: %s'%((i+1),currID.sensor_name.decode('utf-8'),currID.serial_number.decode('utf-8')))
+        selectionStr = input('*****\nEnter the integer for the camera you want to open, or 0 for demo:\n')
+        try:
+            selection = np.int32(selectionStr)
+        except ValueError:
+            print('Valid integer could not be parsed.')
+            selection = -1
+        finally:
+            if selection <= -1 or selection > idCount.value:
+                print('Cannot open camera - invalid input.')
+                returnVal = False
+            elif selection >0 and selection <= idCount.value:
+                openErr = self.picamLib.Picam_OpenCamera(ctypes.byref(idArray[selection-1]),ctypes.byref(self.cam))
+                if openErr == 0:
+                    #make sure the destination struct is initialized first
+                    ctypes.memmove(ctypes.addressof(self.camID), ctypes.addressof(idArray[selection-1]), ctypes.sizeof(idArray[selection-1]))
+                    returnVal = True
+                else:
+                    errStr = self.EnumString(1, openErr)
+                    print('Cannot open camera: %s'%(errStr))
+                    returnVal = False
+            elif selection == 0:
+                selectionStr = input('Enter the camera model ID for desired demo (e.g. 1206 for ProEM-HS 1024):\n')
+                try:
+                    selectionDemo = np.int32(selectionStr)
+                except ValueError:
+                    print('Valid integer could not be parsed. Not opening any camera.')
+                    selectionDemo = -1
+                    returnVal = False
+                if selectionDemo > 0:
+                    self.picamLib.Picam_ConnectDemoCamera(ctypes.c_int(selectionDemo),b'SLTest',ctypes.byref(self.camID))
+                    openErr = self.picamLib.Picam_OpenCamera(ctypes.byref(self.camID),ctypes.byref(self.cam))
+                    if openErr == 0:
+                        returnVal = True
+                    else:
+                        errStr = self.EnumString(1, openErr)
+                        print('Cannot open camera: %s'%(errStr))
+                        returnVal = False
+            else:
+                print('Unknown Error.')
+                returnVal = False
+        self.picamLib.Picam_DestroyCameraIDs(idArray)
+        #print(self.camID)
+        if returnVal:
+            print('*****\nCamera Sensor: %s, Serial #: %s'%(self.camID.sensor_name.decode('utf-8'),self.camID.serial_number.decode('utf-8')))
+            self.PrintCameraFirmware()
+            self.GetFirstROI()
+            print('Default ROI: %d (cols) x %d (rows)'%(self.numCols,self.numRows))
+            self.windowName = 'Readout from %s'%(self.camID.sensor_name.decode('utf-8'))
+        return returnVal        
 
     #for ICCD, treat input exposure as gate width (with default delay)
     def SetExposure(self, time):
@@ -706,7 +843,7 @@ class Camera():
             if self.display and len(self.newestFrame) > 0:                                  
                 DisplayImage(self.newestFrame, self.windowName, self.bits)
             cv2.waitKey(42) #~24fps, if it can keep up
-        print('Acquisition stopped. %d readouts obtained.'%(self.counter))
+        print('Acquisition stopped. %d readouts obtained in %0.3fs.'%(self.counter, (time.perf_counter_ns()-self.acqTimer)/1e9))
         try:
             self.picamLib.PicamAdvanced_UnregisterForAcquisitionUpdated(self.dev, self.acqCallback)
         except:
@@ -749,8 +886,9 @@ class Camera():
 
             #read temperature before starting acqusition
             self.ReadTemperatureStatus()
+            self.acqTimer = time.perf_counter_ns()
             self.picamLib.Picam_StartAcquisition(self.dev)        
-            print('Acquisition of %d frames asynchronously started'%(frameCount.value))
+            print('Acquisition of %d frames started (preview mode)...'%(frameCount.value))
             stopThread = threading.Thread(target=Stop, daemon=True, args=(self,))
             stopThread.start()
 
