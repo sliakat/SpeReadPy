@@ -1,0 +1,39 @@
+***************************************
+Test script sample use (in terminal):
+python3 -m picam-opencv 0 -p -exp 0 -speed 20 -roi 400
+
+Sample output:
+PICam Initialized: True
+	Version 5.12.3.2209
+*****
+2 Teledyne SciCam camera(s) detected:
+[1]: E2V 1024 x 1024 (CCD 351)(B)(eXcelon), Serial #: Eng_12345
+[2]: E2V 2048 x 2048 (CCD 230-42)(B)(MP)(eXcelon), Serial #: 08701220
+*****
+Enter the integer for the camera you want to open, or 0 for demo:
+1
+*****
+Camera Sensor: E2V 1024 x 1024 (CCD 351)(B)(eXcelon), Serial #: Eng_12345
+%%%%%
+Camera Firmware:
+Config                  	0x1087,363,4.0
+Camera                  	0x48B2,487,2.53
+Power                   	0x4887,492,1.0
+%%%%%
+Default ROI: 1024 (cols) x 1024 (rows)
+Trying to commit exposure time to 0.00 ms... Exposure committed to 0.00 ms.
+Valid ADC Speeds for this camera (in MHz):
+	36.670, 30.000, 20.000, 10.000, 5.000
+
+Attempting to set ADC Speed to 20.000 MHz... ADC Speed set to 20.000 MHz
+Successfully changed ROI to 400 (cols) x 400 (rows)
+	Commit successful! Current readout rate: 39.66 readouts/sec
+ROI 1 shape:  (1, 400, 400)
+*****
+Sensor Temperature -70.00C (Locked). Set Point -70.00C.
+*****
+Acquisition of 0 frames started (preview mode)...
+
+Key pressed during acquisition -- acquisition will stop.
+Mean of most recently processed frame: 15603.096 cts
+Acquisition stopped. 112 readouts obtained in 3.576s.
