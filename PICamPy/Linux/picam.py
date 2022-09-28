@@ -788,7 +788,7 @@ class Camera():
         print('*****\nSensor Temperature %0.2fC (%s). Set Point %0.2fC.\n*****'%(sensorTemp.value, tempStatus[sensorLockStatus.value], sensorSetPt.value))
 
     #-s mode, default saves to numpy array in memory, -d mode optionally write to disk (and not keep in memory)
-    def Acquire(self,*,frames: int=1, bufNomWidth: int=50, saveDisk: bool=False):    #will launch the AcquireHelper function in a new thread when user calls it
+    def Acquire(self,*,frames: int=1, bufNomWidth: int=50, saveDisk: bool=False, launchDisp: bool=False):    #will launch the AcquireHelper function in a new thread when user calls it
         self.saveDisk = saveDisk
         frameCount = ctypes.c_int(0)
         frameCount.value = frames
@@ -831,6 +831,9 @@ class Camera():
             acqThread.start()    #data processing will be in a different thread than the display
             writeThread = threading.Thread(target=Write, daemon=True, args=(self,))
             writeThread.start()
+            #use launchDisp when running interactively -- in this case the calling thread will not return until acquisition stops.
+            if launchDisp:
+                self.DisplayCameraData()
 
     #display will only show first ROI
     def DisplayCameraData(self):    #this will block and then unregister callback (if applicable) when done
@@ -853,7 +856,7 @@ class Camera():
 
     #since we're not saving data here, this is not generalized for multi-ROI -- the first ROI will be displayed
     #-p mode
-    def AcquireCB(self,*,frames: int=5, bufNomWidth: int=50):    #utilizes Advanced API to demonstrate callbacks, returns immediately
+    def AcquireCB(self,*,frames: int=5, bufNomWidth: int=50, launchDisp: bool=False):    #utilizes Advanced API to demonstrate callbacks, returns immediately
         self.picamLib.PicamAdvanced_GetCameraDevice(self.cam, ctypes.byref(self.dev))
         frameCount = ctypes.c_int(0)
         frameCount.value = frames
@@ -891,6 +894,9 @@ class Camera():
             print('Acquisition of %d frames started (preview mode)...'%(frameCount.value))
             stopThread = threading.Thread(target=Stop, daemon=True, args=(self,))
             stopThread.start()
+            #use launchDisp when running interactively -- in this case the calling thread will not return until acquisition stops.
+            if launchDisp:
+                self.DisplayCameraData()
 
     #niche function for user-specific test
     def TimeBetweenAcqs(self, iters:np.int32=3):
