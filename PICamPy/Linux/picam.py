@@ -8,12 +8,15 @@ import cv2
 import threading
 import queue
 import time
-
+from matplotlib import pyplot as plt
+import matplotlib
 
 os.environ["GENICAM_ROOT_V2_4"] = "/opt/pleora/ebus_sdk/x86_64/lib/genicam/"    #declaration needed for Linux SDK
 
 lock = threading.Lock()
 q = queue.Queue()
+
+displayType = {0:'opencv', 1:'matplotlib'}
 
 def calcParam(v,c,n):
     return (((c)<<24)+((v)<<16)+(n))
@@ -37,7 +40,7 @@ paramSensorTemperatureReading = ctypes.c_int(calcParam(2,1,15))
 paramSensorTemperatureSetPoint = ctypes.c_int(calcParam(2,2,14))
 paramSensorTemperatureStatus = ctypes.c_int(calcParam(4,1,16))
 
-#opencv related functions
+#display related functions
 def WindowSize(numRows,numCols):
     aspect = 1
     if numRows > 1080:
@@ -57,7 +60,32 @@ def SetupDisplay(numRows,numCols,windowName):
         cv2.namedWindow(windowName,cv2.WINDOW_NORMAL)
         winWidth, winHeight = WindowSize(numRows, numCols)
         cv2.resizeWindow(windowName,winWidth,winHeight)
-        cv2.moveWindow(windowName, 100,100)
+        cv2.moveWindow(windowName, 100,100)        
+
+def SetupDisplayMPL(numRows,numCols,windowName):
+    winWidth, winHeight = WindowSize(numRows, numCols)
+    fig = plt.figure(windowName, figsize=(winWidth/75,winHeight/75))
+    ax = fig.add_subplot(1,1,1)
+    dummyData = np.zeros([numRows,numCols])
+    if np.size(dummyData,0)==1:
+        ax.grid()
+        (artist,) = ax.plot(dummyData[0])
+        ax.set_xlabel('Pixel')
+        ax.set(xlim=(0,np.size(dummyData[0])))
+        ax.set_ylabel('Intensity (counts)')
+    else:
+        artist = ax.imshow(dummyData,origin='upper',cmap='gray')
+        ax.set_xlabel('Column')
+        ax.set_ylabel('Row')
+    ax.set_title(windowName)
+    #manager = fig.canvas.manager
+    plt.show(block=False)
+    plt.pause(.01)
+
+    bg = fig.canvas.copy_from_bbox(fig.bbox)
+    ax.draw_artist(artist)
+    fig.canvas.blit(fig.bbox)
+    return ax, fig, artist, bg
 
 def DisplayImage(imData, windowName, bits):        #data needs to be passed in correct shape
     vmax = pow(2,16)-1
@@ -68,6 +96,28 @@ def DisplayImage(imData, windowName, bits):        #data needs to be passed in c
         imData = (imData/divFactor).astype(np.uint16)
     normData = cv2.normalize(imData,None,alpha=0, beta=vmax, norm_type=cv2.NORM_MINMAX)    
     cv2.imshow(windowName, normData)
+
+def DisplayImageMPL(imData, windowName, bits, ax, fig, artist, bg):
+    start = time.perf_counter_ns()
+    fig.canvas.restore_region(bg)
+    #print('Time for percentile: %0.3fms'%((time.perf_counter_ns()-start)/1e6))
+    #ax.clear()
+
+    if np.size(imData,0)==1:
+        artist.set_ydata(imData[0])
+        upper = np.max(imData[0])*1.25
+        ax.set(ylim=(0,upper))
+        plt.pause(.001) #setting axes limits so this is needed
+    else:
+        artist.set_data(imData)
+        artist.autoscale() 
+        #ax.imshow(imData,origin='upper',vmin=display_min,vmax=display_max,cmap='gray',animated=True)  
+    
+    ax.draw_artist(artist)
+    fig.canvas.blit(fig.bbox)
+    fig.canvas.flush_events()
+    #print('Time for imshow: %0.3fms'%((time.perf_counter_ns()-start)/1e6))
+    
     
 #this will run in its own thread
 def AcquireHelper(camera):
@@ -186,7 +236,7 @@ class validationResult(ctypes.Structure):
 
 
 class Camera():
-    def __init__(self,*,libPath: str='/usr/local/lib/libpicam.so'):    #class will instantiate and initialize PICam
+    def __init__(self,*,libPath: str='/usr/local/lib/libpicam.so', dispType: int=0):    #class will instantiate and initialize PICam
         self.cam = ctypes.c_void_p(0)
         self.dev = ctypes.c_void_p(0)
         self.camID = camIDStruct(0,0,b'',b'')
@@ -209,6 +259,7 @@ class Camera():
         self.saveDisk = False
         self.eventTimer = 0
         self.acqTimer = 0
+        self.dispType = dispType
         self.Initialize()
 
     def AcquisitionUpdated(self, device, available, status):    #PICam will launch callback in another thread
@@ -256,6 +307,10 @@ class Camera():
             released = ctypes.c_int(0)
             self.picamLib.Picam_GetVersion(ctypes.byref(major),ctypes.byref(minor),ctypes.byref(distribution),ctypes.byref(released))
             print("\tVersion %d.%d.%d.%d"%(major.value, minor.value, distribution.value, released.value))
+            #display behavior: if dispType entered 0 (default), qt w/ opencv is used. mpl is only used if there is 1 row 
+            #if dispType is entered 1, the mpl will be used for both images and line plots. backend must be set accordingly
+            if self.dispType == 1:
+                matplotlib.use('TkAgg')
 
     def Uninitialize(self):
         self.picamLib.Picam_UninitializeLibrary()
@@ -269,8 +324,13 @@ class Camera():
         self.numCols = int(roiCast.width/roiCast.x_binning)
         self.numRows = int(roiCast.height/roiCast.y_binning)
         self.picamLib.Picam_DestroyRois(rois)
-        if self.numRows > 1:
-            self.display = True       #change this back to True for opencv display
+        self.display = True
+        #if there is one row in the first ROI, use matplotlib for line plot -- backend needs to be set properly
+        if self.numRows == 1:
+            self.dispType = 1
+            matplotlib.use('TkAgg')
+        if self.numRows <= 1 and self.dispType == 0:
+            self.display = False       #opencv can't handle line plots, so don't plot single row data if using opencv
     
     #test function to generate n ROIs of full width and 10+ rows that start from the top of the camera.
     def SetROIs(self, n):
@@ -325,6 +385,46 @@ class Camera():
             newY = ctypes.c_int(np.int32(np.floor(defRows.value/2 - dim/2)))
             roiArray = ctypes.ARRAY(roiStruct, 1)()
             roiArray[0] = roiStruct(newX.value, dim, 1, newY.value, dim, 1)
+            rois = roisStruct(ctypes.addressof(roiArray), 1)
+            self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, ctypes.byref(rois))
+            #now validate the ROI that was just set
+            valObj = ctypes.c_void_p(0)
+            self.picamLib.PicamAdvanced_ValidateParameter(self.cam, paramROIs, ctypes.byref(valObj))
+            valObj = ctypes.cast(valObj,ctypes.POINTER(validationResult))
+            #print(valObj[0].is_valid)
+            if valObj[0].is_valid:
+                print('Successfully changed ROI to ',end='')
+            else:
+                #get the default ROI
+                roisDef = ctypes.c_void_p(0)
+                self.picamLib.Picam_GetParameterRoisDefaultValue(self.cam, paramROIs, ctypes.byref(roisDef))
+                self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, roisDef)
+                self.picamLib.Picam_DestroyRois(roisDef)
+                print('Could not change ROI. ROI has defaulted back to ')
+            self.GetFirstROI()
+            print('%d (cols) x %d (rows)'%(self.numCols, self.numRows))
+            self.picamLib.Picam_DestroyValidationResult(valObj)
+            #print(newX.value, newY.value)
+            return
+        #this is the exit if something fails along the way
+        print('Could not attempt to set center ROI due to parameter and/or dimension mismatch.')
+        return
+
+    #full width, bin n center rows
+    def SetCenterBinROI(self, rows: np.int32=1):
+        defRows = ctypes.c_int(0)
+        defCols = ctypes.c_int(0)
+        self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramSensorActiveWidth, ctypes.byref(defCols))
+        self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramSensorActiveHeight, ctypes.byref(defRows))
+        #print(defRows.value, defCols.value)
+        if rows <= defRows.value and rows >0:
+            newDim = ctypes.c_int(rows)
+            newX = ctypes.c_int(0)
+            newY = ctypes.c_int(np.int32(np.floor(defRows.value/2 - rows/2)))
+            newHeight = ctypes.c_int(rows)
+            newYBin = ctypes.c_int(rows)
+            roiArray = ctypes.ARRAY(roiStruct, 1)()
+            roiArray[0] = roiStruct(newX.value, defCols.value, 1, newY.value, newHeight.value, newYBin.value)
             rois = roisStruct(ctypes.addressof(roiArray), 1)
             self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, ctypes.byref(rois))
             #now validate the ROI that was just set
@@ -808,7 +908,11 @@ class Camera():
             else:
                 self.SetupFullData(frames)
             if self.display:
-                SetupDisplay(self.numRows, self.numCols, self.windowName)
+                match self.dispType:
+                    case 0:                        
+                        SetupDisplay(self.numRows, self.numCols, self.windowName)
+                    case 1:
+                        self.ax, self.fig, self.artist, self.bg = SetupDisplayMPL(self.numRows, self.numCols, self.windowName)
             self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))
 
             #adding ring buffering so that large number of frames can still be collected if saving
@@ -838,21 +942,44 @@ class Camera():
     #display will only show first ROI
     def DisplayCameraData(self):    #this will block and then unregister callback (if applicable) when done
         #do-while
-        cv2.waitKey(100)
+        if self.dispType == 0:
+            cv2.waitKey(100)
+        else:
+            time.sleep(0.1)
         runStatus = ctypes.c_bool(False)
         self.picamLib.Picam_IsAcquisitionRunning(self.cam, ctypes.byref(runStatus))
         self.runningStatus = runStatus
         while self.runningStatus:
-            if self.display and len(self.newestFrame) > 0:                                  
-                DisplayImage(self.newestFrame, self.windowName, self.bits)
-            cv2.waitKey(42) #~24fps, if it can keep up
+            if self.display and len(self.newestFrame) > 0:
+                match self.dispType:
+                    case 0:
+                        start = time.perf_counter_ns()
+                        DisplayImage(self.newestFrame, self.windowName, self.bits)
+                        end = time.perf_counter_ns() 
+                        dispTime = (end-start)/1e6
+                        #print('Display time: %0.3fms'%(dispTime))
+                        if dispTime < 42:
+                            cv2.waitKey(np.int32(42-dispTime)) #~24fps, if it can keep up
+                    case 1:
+                        start = time.perf_counter_ns()
+                        DisplayImageMPL(self.newestFrame, self.windowName, self.bits, self.ax, self.fig, self.artist, self.bg)  
+                        end = time.perf_counter_ns() 
+                        dispTime = (end-start)/1e6
+                        #print('Display time: %0.3fms'%(dispTime)) 
+                        if dispTime < 42:
+                            time.sleep((42-dispTime)/1000) #~24fps, if it can keep up
+                                
         print('Acquisition stopped. %d readouts obtained in %0.3fs.'%(self.counter, (time.perf_counter_ns()-self.acqTimer)/1e9))
         try:
             self.picamLib.PicamAdvanced_UnregisterForAcquisitionUpdated(self.dev, self.acqCallback)
         except:
             pass
-        cv2.waitKey(10000)
-        cv2.destroyAllWindows()
+        match self.dispType:
+            case 0:
+                cv2.waitKey(10000)
+                cv2.destroyAllWindows()
+            case 1:
+                plt.show()      #blocks until display is closed.
 
     #since we're not saving data here, this is not generalized for multi-ROI -- the first ROI will be displayed
     #-p mode
@@ -863,7 +990,11 @@ class Camera():
         self.picamLib.Picam_SetParameterLargeIntegerValue(self.dev,paramFrames,frameCount)    #setting with dev handle commits to physical device if successful
         if self.Commit() and frameCount.value >= 0:
             if self.display:
-                SetupDisplay(self.numRows, self.numCols, self.windowName)
+                match self.dispType:
+                    case 0:                        
+                        SetupDisplay(self.numRows, self.numCols, self.windowName)
+                    case 1:
+                        self.ax, self.fig, self.artist, self.bg = SetupDisplayMPL(self.numRows, self.numCols, self.windowName)
             self.ResetCount()
             self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))
             #even though FullData will not be used, need to set shape for ROI parsing in ProcessData
@@ -919,6 +1050,23 @@ class Camera():
             self.picamLib.Picam_WaitForAcquisitionUpdate(self.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
             #next iteration will start once acquisition has stopped -- if needed, the aStatus from Wait 
             #can be used to verify that it has actually stopped.
+
+    def TimeForFirstAcq(self, iters:np.int32=10):
+        dat = availableData(0,0)
+        aStatus=acqStatus(False,0,0)
+        self.picamLib.Picam_SetParameterLargeIntegerValue(self.cam,paramFrames,1)
+        self.Commit()       #my commit function puts readout rate into self.readRate
+        for i in range(0,iters):
+            start = time.perf_counter_ns()  #start timer right before 
+            self.picamLib.Picam_StartAcquisition(self.cam)            
+            self.picamLib.Picam_WaitForAcquisitionUpdate(self.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
+            while(aStatus.running):
+                self.picamLib.Picam_WaitForAcquisitionUpdate(self.cam,-1,ctypes.byref(dat),ctypes.byref(aStatus))
+            end = time.perf_counter_ns()    #end time after status is no longer running.
+            totalElapsed = (end - start) /1e6   #elapsed time in ms
+            acqDelay = totalElapsed - (1000/self.readRate.value)  #acquisition lag is the total elapsed time - expected readout time
+            print('First acquisition delay: %0.3fms'%(acqDelay))
+            time.sleep(5)   #sleep for 5 seconds before starting another acq -- put camera in clean mode
 
     def ReturnData(self):
         start = time.perf_counter_ns()
