@@ -134,4 +134,68 @@ def readSpe(filePath):
             dataList.append(np.reshape(regionData,(numFrames,frameHeight,frameWidth),order='C'))
             totalData=dataContainer(dataList)
             return totalData
-            
+
+class SpeReference():
+    dataTypes = {'MonochromeUnsigned16':np.uint16, 'MonochromeUnsigned32':np.uint32, 'MonochromeFloating32':np.float32}
+    def __init__(self, filePath: str):
+        self.filePath = filePath
+        self.speVersion = 0
+        self.totalROIs = 0
+        self.roiShapes = []
+        self.wavelength = None
+
+    def InitializeSpe(self, encoding="utf8"):
+        with open(self.filePath) as f:
+            f.seek(678)
+            self.xmlLoc = np.fromfile(f,dtype=np.uint64,count=1)[0]
+            f.seek(1992)
+            self.speVersion = np.fromfile(f,dtype=np.float32,count=1)[0]
+
+            #get ROIs and shapes
+            if self.speVersion==3:
+                f.seek(self.xmlLoc)
+                xmlFooter = f.read()
+                xmlRoot = ET.fromstring(xmlFooter)
+                regionList=list()
+                metaList = list()
+                dataList=list()            
+                calFlag=False
+                for child in xmlRoot:
+                    if 'DataFormat'.casefold() in child.tag.casefold():
+                        for child1 in child:                    
+                            if 'DataBlock'.casefold() in child1.tag.casefold():
+                                readoutStride=np.int64(child1.get('stride'))
+                                numFrames=np.int64(child1.get('count'))
+                                pixFormat=child1.get('pixelFormat')
+                                for child2 in child1:
+                                    if 'DataBlock'.casefold() in child1.tag.casefold():
+                                        regStride=np.int64(child2.get('stride'))
+                                        regWidth=np.int64(child2.get('width'))
+                                        regHeight=np.int64(child2.get('height'))
+                                        regionList.append(ROI(regWidth,regHeight,regStride))
+                    if 'MetaFormat'.casefold() in child.tag.casefold():
+                        for child1 in child:                    
+                            if 'MetaBlock'.casefold() in child1.tag.casefold():
+                                for child2 in child1:
+                                    metaType = child2.tag.rsplit('}',maxsplit=1)[1]
+                                    metaEvent = child2.get('event')
+                                    metaStride = np.int64(np.int64(child2.get('bitDepth'))/8)
+                                    metaResolution = child2.get('resolution')
+                                    if metaEvent != None and metaResolution !=None:
+                                        metaList.append(MetaContainer(metaType,metaStride,metaEvent=metaEvent,metaResolution=np.int64(metaResolution)))
+                                    else:
+                                        metaList.append(MetaContainer(metaType,metaStride))                                
+                    if 'Calibrations'.casefold() in child.tag.casefold():
+                        for child1 in child:
+                            if 'WavelengthMapping'.casefold() in child1.tag.casefold():
+                                for child2 in child1:
+                                    if 'WavelengthError'.casefold() in child2.tag.casefold():
+                                        wavelengths = np.array([])
+                                        wlText = child2.text.rsplit()
+                                        for elem in wlText:
+                                            wavelengths = np.append(wavelengths,np.fromstring(elem,sep=',')[0])
+                                    else:
+                                        wavelengths=np.fromstring(child2.text,sep=',')
+                                calFlag=True                    
+        
+        
