@@ -17,6 +17,10 @@ class ROI:
         self.width=width
         self.height=height
         self.stride=stride
+        self.X = 0
+        self.Y = 0
+        self.xbin = 1
+        self.ybin = 1
         
 class MetaContainer:
     def __init__(self,metaType,stride,*,metaEvent:str='',metaResolution:np.int64=0):
@@ -140,12 +144,16 @@ class SpeReference():
     def __init__(self, filePath: str):
         self.filePath = filePath
         self.speVersion = 0
-        self.totalROIs = 0
-        self.roiShapes = []
+        self.roiList = []
+        self.readoutStride = 0
+        self.numFrames = 0
+        self.pixelFormat = None
         self.wavelength = None
+        self.metaList = []
+        self.InitializeSpe()
 
-    def InitializeSpe(self, encoding="utf8"):
-        with open(self.filePath) as f:
+    def InitializeSpe(self):
+        with open(self.filePath, encoding="utf8") as f:
             f.seek(678)
             self.xmlLoc = np.fromfile(f,dtype=np.uint64,count=1)[0]
             f.seek(1992)
@@ -156,23 +164,19 @@ class SpeReference():
                 f.seek(self.xmlLoc)
                 xmlFooter = f.read()
                 xmlRoot = ET.fromstring(xmlFooter)
-                regionList=list()
-                metaList = list()
-                dataList=list()            
-                calFlag=False
                 for child in xmlRoot:
                     if 'DataFormat'.casefold() in child.tag.casefold():
                         for child1 in child:                    
                             if 'DataBlock'.casefold() in child1.tag.casefold():
-                                readoutStride=np.int64(child1.get('stride'))
-                                numFrames=np.int64(child1.get('count'))
-                                pixFormat=child1.get('pixelFormat')
+                                self.readoutStride=np.int64(child1.get('stride'))
+                                self.numFrames=np.int64(child1.get('count'))
+                                self.pixelFormat=child1.get('pixelFormat')
                                 for child2 in child1:
                                     if 'DataBlock'.casefold() in child1.tag.casefold():
                                         regStride=np.int64(child2.get('stride'))
                                         regWidth=np.int64(child2.get('width'))
                                         regHeight=np.int64(child2.get('height'))
-                                        regionList.append(ROI(regWidth,regHeight,regStride))
+                                        self.roiList.append(ROI(regWidth,regHeight,regStride))
                     if 'MetaFormat'.casefold() in child.tag.casefold():
                         for child1 in child:                    
                             if 'MetaBlock'.casefold() in child1.tag.casefold():
@@ -182,10 +186,11 @@ class SpeReference():
                                     metaStride = np.int64(np.int64(child2.get('bitDepth'))/8)
                                     metaResolution = child2.get('resolution')
                                     if metaEvent != None and metaResolution !=None:
-                                        metaList.append(MetaContainer(metaType,metaStride,metaEvent=metaEvent,metaResolution=np.int64(metaResolution)))
+                                        self.metaList.append(MetaContainer(metaType,metaStride,metaEvent=metaEvent,metaResolution=np.int64(metaResolution)))
                                     else:
-                                        metaList.append(MetaContainer(metaType,metaStride))                                
+                                        self.metaList.append(MetaContainer(metaType,metaStride))                                
                     if 'Calibrations'.casefold() in child.tag.casefold():
+                        counter = 0
                         for child1 in child:
                             if 'WavelengthMapping'.casefold() in child1.tag.casefold():
                                 for child2 in child1:
@@ -194,8 +199,60 @@ class SpeReference():
                                         wlText = child2.text.rsplit()
                                         for elem in wlText:
                                             wavelengths = np.append(wavelengths,np.fromstring(elem,sep=',')[0])
+                                        self.wavelength = wavelengths
                                     else:
-                                        wavelengths=np.fromstring(child2.text,sep=',')
-                                calFlag=True                    
+                                        self.wavelength = np.fromstring(child2.text,sep=',')       
+                            if 'SensorMapping'.casefold() in child1.tag.casefold():                                
+                                if counter < len(self.roiList):
+                                    self.roiList[counter].X = np.int32(child1.get('x'))
+                                    self.roiList[counter].Y = np.int32(child1.get('y'))
+                                    ogWidth = np.int32(child1.get('width'))
+                                    ogHeight = np.int32(child1.get('height'))
+                                    self.roiList[counter].xbin = np.int32(child1.get('xBinning'))
+                                    self.roiList[counter].ybin = np.int32(child1.get('yBinning'))
+                                    self.roiList[counter].width = np.int32(ogWidth / self.roiList[counter].xbin)
+                                    self.roiList[counter].height = np.int32(ogHeight / self.roiList[counter].ybin)
+                                    counter += 1
+                                else:
+                                    break
+    def GetData(self,*,rois:list=[], frames:list=[]):
+        #if no inputs, or empty list, set to all
+        if len(rois) == 0:
+            rois = np.arange(0,len(self.roiList))
+            print(rois)
+        if len(frames) == 0:
+            frames = np.arange(0,self.numFrames)
+        #check for improper values, raise exception if necessary
+        try:
+            for item in rois:
+                if item < 0 or item >= len(self.roiList):
+                    raise ValueError('ROI value outside of allowed ranged (%d through %d)'%(0, len(self.roiList)-1))
+        except TypeError:
+            raise TypeError('ROI input needs to be iterable')
+        try:
+            for item in frames:
+                if item < 0 or item >= self.numFrames:
+                    raise ValueError('Frame value outside of allowed ranged (%d through %d)'%(0, self.numFrames-1))
+        except TypeError:
+            raise TypeError('Frame input needs to be iterable')
+
+        #now with that out of the way... get the data
+        regionOffset=0
+        dataList=list()
+        with open(self.filePath, encoding="utf8") as f:
+            f.seek(0)
+            bpp = np.dtype(self.dataTypes[self.pixelFormat]).itemsize
+            for i in range(0,len(rois)):
+                regionData = np.zeros([len(frames),self.roiList[i].height, self.roiList[i].width])                
+                if i>0:
+                    regionOffset += (self.roiList[i-1].stride)/bpp                    
+                for j in range(0,len(frames)):
+                    tmp = np.fromfile(f,dtype=dataTypes[pixFormat],count=numPixels,offset=4100)
+                dataList.append(np.reshape(regionData,(numFrames,regionList[i].height,regionList[i].width),order='C'))
+        
+        
+        
+
+
         
         
