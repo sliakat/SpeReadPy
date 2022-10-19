@@ -1,5 +1,13 @@
 from readSpe import SpeReference
+from SLPlots import PlotNumpy
+import tkinter as tk
+from tkinter import filedialog
 
-file = 'C:\\Users\\sliakat\\OneDrive - Teledyne Technologies Inc\\MeetingsTrainings\\LunchAndLearn\\2022-Q2-Python\\02-OpenSpes\\TestMeta-MultiROI.spe'
+root = tk.Tk()
+file = filedialog.askopenfilename(title='Select Spe File',filetypes=[('spe files','*.spe'),('spe files','*.SPE')])
+root.withdraw()
+
 spe = SpeReference(file)
-print(spe.GetData(rois=[1]))
+data = spe.GetData(rois=[], frames=[])
+for item in data:
+    PlotNumpy(item,file)
