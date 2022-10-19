@@ -215,11 +215,11 @@ class SpeReference():
                                     counter += 1
                                 else:
                                     break
+    
     def GetData(self,*,rois:list=[], frames:list=[]):
         #if no inputs, or empty list, set to all
         if len(rois) == 0:
             rois = np.arange(0,len(self.roiList))
-            print(rois)
         if len(frames) == 0:
             frames = np.arange(0,self.numFrames)
         #check for improper values, raise exception if necessary
@@ -239,20 +239,19 @@ class SpeReference():
         #now with that out of the way... get the data
         regionOffset=0
         dataList=list()
-        with open(self.filePath, encoding="utf8") as f:
-            f.seek(0)
-            bpp = np.dtype(self.dataTypes[self.pixelFormat]).itemsize
-            for i in range(0,len(rois)):
-                regionData = np.zeros([len(frames),self.roiList[i].height, self.roiList[i].width])                
-                if i>0:
-                    regionOffset += (self.roiList[i-1].stride)/bpp                    
+        with open(self.filePath, encoding="utf8") as f:            
+            bpp = np.dtype(self.dataTypes[self.pixelFormat]).itemsize            
+            for i in range(0,len(rois)):                
+                regionData = np.zeros([len(frames),self.roiList[rois[i]].height, self.roiList[rois[i]].width])
+                regionOffset = 0                
+                if rois[i]>0:
+                    for ii in range(0,rois[i]):
+                        regionOffset += np.int32(self.roiList[ii].stride/bpp)                    
                 for j in range(0,len(frames)):
-                    tmp = np.fromfile(f,dtype=dataTypes[pixFormat],count=numPixels,offset=4100)
-                dataList.append(np.reshape(regionData,(numFrames,regionList[i].height,regionList[i].width),order='C'))
-        
-        
-        
-
-
-        
-        
+                    f.seek(0)                    
+                    frameOffset = np.int32(frames[j]*self.readoutStride/bpp)
+                    readCount =  np.int64(self.roiList[rois[i]].stride/bpp)
+                    tmp = np.fromfile(f,dtype=self.dataTypes[self.pixelFormat],count=readCount,offset=np.int64(4100+(regionOffset*bpp)+(frameOffset*bpp)))
+                    regionData[j,:] = np.reshape(tmp,[self.roiList[rois[i]].height,self.roiList[rois[i]].width])
+                dataList.append(regionData)
+        return dataList
