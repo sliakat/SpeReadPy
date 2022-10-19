@@ -8,6 +8,6 @@ file = filedialog.askopenfilename(title='Select Spe File',filetypes=[('spe files
 root.withdraw()
 
 spe = SpeReference(file)
-data = spe.GetData(rois=[], frames=[])
+data = spe.GetData(rois=[2], frames=[0,2])
 for item in data:
     PlotNumpy(item,file)
