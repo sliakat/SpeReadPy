@@ -2,6 +2,11 @@
 Python spe file reader, works on v2.0 (WinSpec/32) and v3.0 (LightField) versions.
 
 readSpe.py is the function that will load the relevant content from a given spe file.
+- Added a class based reference to the spe file that allows for extraction of only needed data
+- example usage:
+- spe = SpeReference(file)
+- data = spe.GetData(rois=[2], frames=[0,2])
+- this will get data (list of numpy array) for frames 1 and 3 in roi #3 for file
 
 showSpeMPL.py is a script that uses matplotlib with the slider widget to visualize multi-frame images.
   -script contains main function, so can run as-is
