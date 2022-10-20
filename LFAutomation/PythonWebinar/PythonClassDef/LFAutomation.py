@@ -10,8 +10,10 @@ Created on Thu Nov  4 09:44:09 2021
 import clr
 import sys
 import os
+import glob
 import numpy as np
-from System import String
+from System import String, Int32
+from System.IO import FileAccess
 from System.Collections.Generic import List
 from System.Runtime.InteropServices import GCHandle, GCHandleType
 from System.Threading import AutoResetEvent
@@ -114,7 +116,7 @@ class AutoClass:
         return self.fileManager.CreateFile(name,roi,numFrames,imgFormat)
 
     def SpeCharacteristics(self, name):
-        imgSetTemp = self.fileManager.OpenFile(name, 1)  #read: 1, write: 2, readwrite: 3
+        imgSetTemp = self.fileManager.OpenFile(name, FileAccess.Read)  #read: 1, write: 2, readwrite: 3
         imageRows = imgSetTemp.GetColumn(0,0,0).GetData().Length
         imageCols = imgSetTemp.GetRow(0,0,0).GetData().Length
         imageFormat = imgSetTemp.GetFrame(0,0).Format
@@ -208,4 +210,19 @@ class AutoClassNiche(AutoClass):    #these are for niche functions or used for d
             self.fileManager.CloseFile(imgSetTemp)
             super(AutoClassNiche,self).counter += 1        
         self.fileManager.CloseFile(combinedData)
-        
+
+    #start w/ a directory of n spe files of 1 frame, save an spe file of n frames.
+    def CombineSpes(self, inputDir:str, newFileName:str):
+        fileList = glob.glob('%s*.spe'%(inputDir))
+        #print(fileList[0])
+        imageRows, imageCols, imageFormat = self.SpeCharacteristics(String(fileList[0]))
+        #print(imageRows)
+        newFileName = String('%s%s'%(inputDir,newFileName))
+        combinedData = self.CreateSpeFile(newFileName,imageRows,imageCols,len(fileList),imageFormat)
+        counter = 0
+        for name in fileList:
+            imgSetTemp = self.fileManager.OpenFile(String(name), FileAccess.Read)
+            combinedData.GetFrame(0,counter).SetData(imgSetTemp.GetFrame(0,0).GetData())
+            self.fileManager.CloseFile(imgSetTemp)
+            counter += 1        
+        self.fileManager.CloseFile(combinedData)

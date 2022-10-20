@@ -5,14 +5,15 @@ Created on Tue Jan 11 09:22:16 2022
 @author: sliakat
 """
 
-#Simple testing with LF.AutoClass
-#will continue to expand with more functions
+#Simple testing with LF.AutoClass for specific things I need
 
-import LFAutomation
-LF = LFAutomation.AutoClass()
+from LFAutomation import AutoClassNiche as ac
 
-LF.NewInstance(expName='ROITest')   #loads whatever experiment you pass in as expName
-r = LF.GetCurrentROIs()
-q = LF.Capture(numFrames = 100)     #list of numpy arrays: [region][frames,rows,cols]
+inputDir = 'C:\\Users\\sabbi\\Documents\\Python\\Datasets\\SPECatDog\\spefiles-val\\'
+
+LF = ac()
+
+LF.NewInstance()   #loads whatever experiment you pass in as expName
+LF.CombineSpes(inputDir, 'ValidationDataCombined.spe')
 
 #LF.CloseInstance()       #run when you want to dispose automation object
