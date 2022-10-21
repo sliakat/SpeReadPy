@@ -212,7 +212,7 @@ class AutoClassNiche(AutoClass):    #these are for niche functions or used for d
         self.fileManager.CloseFile(combinedData)
 
     #start w/ a directory of n spe files of 1 frame, save an spe file of n frames.
-    def CombineSpes(self, inputDir:str, newFileName:str):
+    def CombineSpes(self, inputDir:str, newFileName:str,*,frames:list=[0]):
         fileList = glob.glob('%s*.spe'%(inputDir))
         #print(fileList[0])
         imageRows, imageCols, imageFormat = self.SpeCharacteristics(String(fileList[0]))
@@ -221,8 +221,9 @@ class AutoClassNiche(AutoClass):    #these are for niche functions or used for d
         combinedData = self.CreateSpeFile(newFileName,imageRows,imageCols,len(fileList),imageFormat)
         counter = 0
         for name in fileList:
-            imgSetTemp = self.fileManager.OpenFile(String(name), FileAccess.Read)
-            combinedData.GetFrame(0,counter).SetData(imgSetTemp.GetFrame(0,0).GetData())
-            self.fileManager.CloseFile(imgSetTemp)
-            counter += 1        
+            for item in frames:
+                imgSetTemp = self.fileManager.OpenFile(String(name), FileAccess.Read)
+                combinedData.GetFrame(0,counter).SetData(imgSetTemp.GetFrame(0,item).GetData())
+                self.fileManager.CloseFile(imgSetTemp)
+                counter += 1        
         self.fileManager.CloseFile(combinedData)
