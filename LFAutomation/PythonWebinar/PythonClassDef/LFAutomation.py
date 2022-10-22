@@ -12,7 +12,7 @@ import sys
 import os
 import glob
 import numpy as np
-from System import String, Int32
+from System import String, Int32, Int64
 from System.IO import FileAccess
 from System.Collections.Generic import List
 from System.Runtime.InteropServices import GCHandle, GCHandleType
@@ -218,7 +218,7 @@ class AutoClassNiche(AutoClass):    #these are for niche functions or used for d
         imageRows, imageCols, imageFormat = self.SpeCharacteristics(String(fileList[0]))
         #print(imageRows)
         newFileName = String('%s%s'%(inputDir,newFileName))
-        combinedData = self.CreateSpeFile(newFileName,imageRows,imageCols,len(fileList),imageFormat)
+        combinedData = self.CreateSpeFile(newFileName,imageRows,imageCols,Int64(len(fileList)*len(frames)),imageFormat)
         counter = 0
         for name in fileList:
             for item in frames:

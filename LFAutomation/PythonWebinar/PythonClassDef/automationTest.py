@@ -9,7 +9,8 @@ Created on Tue Jan 11 09:22:16 2022
 
 from LFAutomation import AutoClassNiche as ac
 
-inputDir = 'C:\\Users\\sliakat\\OneDrive - Teledyne Technologies Inc\\SLSandbox\\Python\\GeneralDatasets\\SNRExample\\'
+#inputDir = 'C:\\Users\\sliakat\\OneDrive - Teledyne Technologies Inc\\SLSandbox\\Python\\GeneralDatasets\\SNRExample\\'
+inputDir = 'D:\\PythonLocal\\Datasets\\SNRExample\\'
 
 LF = ac()
 
