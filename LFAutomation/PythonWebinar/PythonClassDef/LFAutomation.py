@@ -65,7 +65,7 @@ class AutoClass:
         self.fileManager = self.auto.LightFieldApplication.FileManager
         if len(expName) > 0:
             self.experiment.Load(expName)
-        self.experiment.ExperimentCompleted += self.acquire_complete
+        #self.experiment.ExperimentCompleted += self.acquire_complete
         
     def GetCurrentROIs(self):
         self.ROIs = np.array([],dtype=np.uint32)
@@ -161,14 +161,13 @@ class AutoClassNiche(AutoClass):    #these are for niche functions or used for d
                 print('Capture returned NULL dataset.')
                 return False
             else:
-                dataArr = self.DataToNumpy(dataSet)
+                #dataArr = self.DataToNumpy(dataSet)
                 if self.counter%100 == 0:
-                    print('%d Captures parsed, Total time elapsed: %0.3f hrs'%(self.counter,(time.perf_counter()-startTime)/(60*60)))
+                    print('%d Captures parsed (%d frames each), Total time elapsed: %0.3f hrs'%(self.counter,numFrames,(time.perf_counter()-startTime)/(60*60)))
                 try:
                     dataSet.Dispose()
                 except:
-                    pass              #may have been disposed in DataToNumpy                
-                #del(dataArr)
+                    pass              #may have been disposed in DataToNumpy
                 return True              
         else:
             return True
