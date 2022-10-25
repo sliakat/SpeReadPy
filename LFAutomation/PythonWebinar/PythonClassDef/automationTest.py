@@ -9,12 +9,12 @@ Created on Tue Jan 11 09:22:16 2022
 
 from LFAutomation import AutoClassNiche as ac
 
-#inputDir = 'C:\\Users\\sliakat\\OneDrive - Teledyne Technologies Inc\\SLSandbox\\Python\\GeneralDatasets\\SNRExample\\'
-inputDir = 'D:\\PythonLocal\\Datasets\\SNRExample\\'
+def ImageLoop(camObject: ac):
+    
 
-LF = ac()
+cam1 = ac()
+cam2 = ac()
+cam3 = ac()
+cam4 = ac()
 
-LF.NewInstance()   #loads whatever experiment you pass in as expName
-LF.CombineSpes(inputDir, 'SNRTestDataCombined.spe', frames=[0,1])
-
-#LF.CloseInstance()       #run when you want to dispose automation object
+cam1.NewInstance
