@@ -10,8 +10,10 @@ Created on Thu Nov  4 09:44:09 2021
 import clr
 import sys
 import os
+import glob
 import numpy as np
-from System import String
+from System import String, Int32, Int64
+from System.IO import FileAccess
 from System.Collections.Generic import List
 from System.Runtime.InteropServices import GCHandle, GCHandleType
 from System.Threading import AutoResetEvent
@@ -63,7 +65,7 @@ class AutoClass:
         self.fileManager = self.auto.LightFieldApplication.FileManager
         if len(expName) > 0:
             self.experiment.Load(expName)
-        self.experiment.ExperimentCompleted += self.acquire_complete
+        #self.experiment.ExperimentCompleted += self.acquire_complete
         
     def GetCurrentROIs(self):
         self.ROIs = np.array([],dtype=np.uint32)
@@ -114,7 +116,7 @@ class AutoClass:
         return self.fileManager.CreateFile(name,roi,numFrames,imgFormat)
 
     def SpeCharacteristics(self, name):
-        imgSetTemp = self.fileManager.OpenFile(name, 1)  #read: 1, write: 2, readwrite: 3
+        imgSetTemp = self.fileManager.OpenFile(name, FileAccess.Read)  #read: 1, write: 2, readwrite: 3
         imageRows = imgSetTemp.GetColumn(0,0,0).GetData().Length
         imageCols = imgSetTemp.GetRow(0,0,0).GetData().Length
         imageFormat = imgSetTemp.GetFrame(0,0).Format
@@ -159,15 +161,13 @@ class AutoClassNiche(AutoClass):    #these are for niche functions or used for d
                 print('Capture returned NULL dataset.')
                 return False
             else:
-                dataArr = self.DataToNumpy(dataSet)
+                #dataArr = self.DataToNumpy(dataSet)
                 if self.counter%100 == 0:
-                    print('%d Captures parsed, Total time elapsed: %0.3f hrs'%(self.counter,(time.perf_counter()-startTime)/(60*60)))
+                    print('%d Captures parsed (%d frames each), Total time elapsed: %0.3f hrs'%(self.counter,numFrames,(time.perf_counter()-startTime)/(60*60)))
                 try:
                     dataSet.Dispose()
                 except:
-                    pass              #may have been disposed in DataToNumpy                
-                del(dataArr)
-                #gc.collect()
+                    pass              #may have been disposed in DataToNumpy
                 return True              
         else:
             return True
@@ -208,4 +208,20 @@ class AutoClassNiche(AutoClass):    #these are for niche functions or used for d
             self.fileManager.CloseFile(imgSetTemp)
             super(AutoClassNiche,self).counter += 1        
         self.fileManager.CloseFile(combinedData)
-        
+
+    #start w/ a directory of n spe files of 1 frame, save an spe file of n frames.
+    def CombineSpes(self, inputDir:str, newFileName:str,*,frames:list=[0]):
+        fileList = glob.glob('%s*.spe'%(inputDir))
+        #print(fileList[0])
+        imageRows, imageCols, imageFormat = self.SpeCharacteristics(String(fileList[0]))
+        #print(imageRows)
+        newFileName = String('%s%s'%(inputDir,newFileName))
+        combinedData = self.CreateSpeFile(newFileName,imageRows,imageCols,Int64(len(fileList)*len(frames)),imageFormat)
+        counter = 0
+        for name in fileList:
+            for item in frames:
+                imgSetTemp = self.fileManager.OpenFile(String(name), FileAccess.Read)
+                combinedData.GetFrame(0,counter).SetData(imgSetTemp.GetFrame(0,item).GetData())
+                self.fileManager.CloseFile(imgSetTemp)
+                counter += 1        
+        self.fileManager.CloseFile(combinedData)
