@@ -168,8 +168,7 @@ class AutoClassNiche(AutoClass):    #these are for niche functions or used for d
                     dataSet.Dispose()
                 except:
                     pass              #may have been disposed in DataToNumpy                
-                del(dataArr)
-                #gc.collect()
+                #del(dataArr)
                 return True              
         else:
             return True
