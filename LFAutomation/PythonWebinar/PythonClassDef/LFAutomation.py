@@ -35,11 +35,12 @@ from PrincetonInstruments.LightField.AddIns import CameraSettings
 from PrincetonInstruments.LightField.AddIns import ExperimentSettings
 from PrincetonInstruments.LightField.AddIns import RegionOfInterest
 from PrincetonInstruments.LightField.AddIns import Pulse 
+from PrincetonInstruments.LightField.AddIns import ImageDataFormat
 
 class AutoClass:
     #static class properties go here
-    dataFormat = {1:ctypes.c_ushort, 2:ctypes.c_uint, 3:ctypes.c_float}
-    byteDiv = {1:2, 2:4, 3:4}
+    dataFormat = {ImageDataFormat.MonochromeUnsigned16:ctypes.c_ushort, ImageDataFormat.MonochromeUnsigned32:ctypes.c_uint, ImageDataFormat.MonochromeFloating32:ctypes.c_float}
+    byteDiv = {ImageDataFormat.MonochromeUnsigned16:2, ImageDataFormat.MonochromeUnsigned32:4, ImageDataFormat.MonochromeFloating32:4}
     
     def __init__(self):
         #per-instance properties
@@ -78,15 +79,13 @@ class AutoClass:
     def DataToNumpy(self, imageDataSet):        
         self.GetCurrentROIs()
         outData = list()    #output data will be in a list of numpy arrays -- each list element for a region
-        dataFmt = imageDataSet.GetFrame(0,0).Format  
+        dataFmt = imageDataSet.GetFrame(0,0).Format
         frames = imageDataSet.Frames
         #get stride of each region
         regions = np.zeros(self.numROIs,dtype=np.uint32)
         for i in range(0,self.numROIs):
             regions[i] = self.ROIs[i*2] * self.ROIs[i*2+1]
-        #start = time.perf_counter()
-        dataBuf = imageDataSet.GetDataBuffer()   #.NET vector (System.Byte[])
-        #print('GetDataBuffer function took: %0.3f s'%(time.perf_counter()-start))        
+        dataBuf = imageDataSet.GetDataBuffer()   #.NET vector (System.Byte[])        
         #convert entre .NET vector to numpy
         src_hndl = GCHandle.Alloc(dataBuf, GCHandleType.Pinned)
         try:
@@ -96,7 +95,7 @@ class AutoClass:
             cbuf = buf_type.from_address(src_ptr)        
             resultArray = np.frombuffer(cbuf, dtype=cbuf._type_)        
         finally:        
-            if src_hndl.IsAllocated: src_hndl.Free() 
+            if src_hndl.IsAllocated: src_hndl.Free()
         
         #append by region
         resultArray = np.reshape(resultArray,(frames,sum(regions)))
@@ -104,11 +103,7 @@ class AutoClass:
             if j == 0:
                 outData.append(np.reshape(resultArray[:,0:sum(regions[0:1])],(frames,self.ROIs[j*2],self.ROIs[j*2+1])))
             else:
-                outData.append(np.reshape(resultArray[:,sum(regions[0:j]):sum(regions[0:j+1])],(frames,self.ROIs[j*2],self.ROIs[j*2+1])))          
-        #explicit cleanup before return
-        imageDataSet.Dispose()
-        del(dataBuf)
-        del(resultArray)        
+                outData.append(np.reshape(resultArray[:,sum(regions[0:j]):sum(regions[0:j+1])],(frames,self.ROIs[j*2],self.ROIs[j*2+1])))         
         return outData
         
     def CreateSpeFile(self, name, rows, cols, numFrames, imgFormat):   #name should include full path, incl dir
@@ -159,18 +154,21 @@ class AutoClassNiche(AutoClass):    #these are for niche functions or used for d
             dataSet = self.experiment.Capture(numFrames)
             if dataSet is None:
                 print('Capture returned NULL dataset.')
-                return False
+                return []
             else:
-                #dataArr = self.DataToNumpy(dataSet)
+                start = time.perf_counter_ns()
+                dataArr = self.DataToNumpy(dataSet)
+                end = time.perf_counter_ns()
+                processTime = (end-start)/1e6
+                #print('Data mean (ROI 1): %0.3f cts, processing time: %0.3f ms'%(np.mean(dataArr[0][:]), processTime))
                 if self.counter%100 == 0:
                     print('%d Captures parsed (%d frames each), Total time elapsed: %0.3f hrs'%(self.counter,numFrames,(time.perf_counter()-startTime)/(60*60)))
                 try:
                     dataSet.Dispose()
-                except:
-                    pass              #may have been disposed in DataToNumpy
-                return True              
+                finally:
+                    return dataArr            
         else:
-            return True
+            return []
         
     def FilenameGen(self, width, delay):
         self.experiment.SetValue(ExperimentSettings.FileNameGenerationBaseFileName, 'CustomSequence.GW%0.3fns.Delay%0.3fus'%(width,(delay/1000)))
