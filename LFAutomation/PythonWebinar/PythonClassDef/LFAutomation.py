@@ -60,6 +60,9 @@ class AutoClass:
         
     def acquire_complete(self, sender, event_args):
         self.acquireCompleted.Set()
+    
+    def SetBaseFilename(self, name:str):
+        self.experiment.SetValue(ExperimentSettings.FileNameGenerationBaseFileName, name)
 
     def experimentDataReady(self, sender, event_args):
         if event_args is not None:

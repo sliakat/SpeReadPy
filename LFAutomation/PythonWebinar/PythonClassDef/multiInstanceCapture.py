@@ -46,11 +46,16 @@ class AutomationObjectManager():
     def LoopWithEvent(self):
         #hook events for each object
         for item in self.objectList:
+            print(id(item))
             item.experiment.ImageDataSetReceived += item.experimentDataReady
+            #I need to do this because if I try to call Preview on n instances at once, the system has an issue with temp file generation.
+            #item.SetBaseFilename('%d'%(id(item)))
         #2 loops - hook all first, then start all
         for item in self.objectList:
             item.ResetCounter()
             item.experiment.Preview()
+            #stagger the image starts by 10ms
+            time.sleep(.01)
         #now the cameras will be running infinitely (until stopped by the Stop thread) and returning data on the event. 
         # you can poke at each experiment's recentData property and get the last updated frame for that experiment.
 
@@ -74,9 +79,9 @@ def InputToStop():
     instances.DisposeAll()
 
 if __name__=="__main__":
-    instances = AutomationObjectManager(['PM1', 'PM2', 'PM3', 'PM4'])
+    #instances = AutomationObjectManager(['PM1', 'PM2', 'PM3', 'PM4'])
+    instances = AutomationObjectManager(['PM1','PM2'])
     instances.LoopWithEvent()
     stopThread = threading.Thread(target=InputToStop, daemon=False)    
     stopThread.start()
     stopThread.join()
-    
