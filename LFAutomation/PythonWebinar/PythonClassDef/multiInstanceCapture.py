@@ -27,10 +27,12 @@ class AutomationObjectManager():
     #capture 100 frames, sleep for 1 sec, repeat until stopped or Capture returns false.
     def ImageLoop(self, idx):
         startTime = time.perf_counter()
-        while self.objectList[idx].Capture(numFrames=100, startTime=startTime):
+        #do-while loop
+        dataList = self.objectList[idx].Capture(numFrames=1, startTime=startTime)
+        while len(dataList) > 0:
             if self.Stop == True:
                 break
-            time.sleep(1)
+            dataList = self.objectList[idx].Capture(numFrames=1, startTime=startTime)
     #create separate threads for all the acquiring instances
     def ImageLoopAll(self):
         for i in range(0, len(self)):
