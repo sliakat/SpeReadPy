@@ -15,6 +15,7 @@ class AutomationObjectManager():
     def __init__(self, instanceNames: list):
         self.objectList = []
         self.threadList = []
+        self.objectRecentFrame = []
         self.Stop = False
         for name in instanceNames:
             self.objectList.append(ac())
@@ -25,6 +26,7 @@ class AutomationObjectManager():
         return self.objectList[idx]
 
     #capture 1 frame repeatedly, repeat until stopped or Capture returns false.
+    #inefficient approch, use for debugging / performance analysis only
     def ImageLoop(self, idx):
         startTime = time.perf_counter()
         #do-while loop
@@ -39,13 +41,31 @@ class AutomationObjectManager():
             self.threadList.append(threading.Thread(target=self.ImageLoop, args=(i,)))
         for item in self.threadList:
             item.start()
-    def StopAll(self):
+
+    #stream data from event
+    def LoopWithEvent(self):
+        #hook events for each object
+        for item in self.objectList:
+            item.experiment.ImageDataSetReceived += item.experimentDataReady
+        #2 loops - hook all first, then start all
+        for item in self.objectList:
+            item.ResetCounter()
+            item.experiment.Preview()
+        #now the cameras will be running infinitely (until stopped by the Stop thread) and returning data on the event. 
+        # you can poke at each experiment's recentData property and get the last updated frame for that experiment.
+
+    def StopAll(self,*,eventAcq: bool=False):
         self.Stop = True
-        for item in self.threadList:
-            item.join()
+        if eventAcq:
+            for item in self.objectList:
+                item.experiment.Stop()
+                item.experiment.ImageDataSetReceived -= item.experimentDataReady
+        else:
+            for item in self.threadList:
+                item.join()
         self.Stop = False
-    def DisposeAll(self):
-        self.StopAll()
+    def DisposeAll(self,*,eventAcq: bool=False):
+        self.StopAll(eventAcq=eventAcq)
         for item in self.objectList:
             item.CloseInstance()
 
@@ -55,7 +75,8 @@ def InputToStop():
 
 if __name__=="__main__":
     instances = AutomationObjectManager(['PM1', 'PM2', 'PM3', 'PM4'])
-    instances.ImageLoopAll()
+    instances.LoopWithEvent()
     stopThread = threading.Thread(target=InputToStop, daemon=False)    
     stopThread.start()
     stopThread.join()
+    
