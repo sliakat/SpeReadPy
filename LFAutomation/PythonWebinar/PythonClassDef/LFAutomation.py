@@ -70,7 +70,7 @@ class AutoClass:
                 frames = event_args.ImageDataSet.Frames
                 self.counter += frames   #in case an event returns multiple frames
                 self.recentData = self.DataToNumpy(event_args.ImageDataSet)
-                if (self.counter%100 == 0):
+                if (self.counter%1 == 0):
                     print('Frame %d: Object at addr %d returned data w/ mean %0.3f'%(self.counter, self.recentData[1], np.mean(self.recentData[0][0][:])))
             event_args.ImageDataSet.Dispose()                    
         
