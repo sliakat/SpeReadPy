@@ -24,7 +24,7 @@ class AutomationObjectManager():
     def __getitem__(self, idx):
         return self.objectList[idx]
 
-    #capture 100 frames, sleep for 1 sec, repeat until stopped or Capture returns false.
+    #capture 1 frame repeatedly, repeat until stopped or Capture returns false.
     def ImageLoop(self, idx):
         startTime = time.perf_counter()
         #do-while loop
