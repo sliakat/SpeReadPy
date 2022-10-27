@@ -37,6 +37,16 @@ from PrincetonInstruments.LightField.AddIns import RegionOfInterest
 from PrincetonInstruments.LightField.AddIns import Pulse 
 from PrincetonInstruments.LightField.AddIns import ImageDataFormat
 
+def experimentDataReady(sender, event_args, ac):
+    if event_args is not None:
+        if event_args.ImageDataSet is not None:
+            frames = event_args.ImageDataSet.Frames
+            ac.counter += frames   #in case an event returns multiple frames
+            ac.recentData = ac.DataToNumpy(event_args.ImageDataSet)
+            if (ac.counter%100 == 0):
+                print('Frame %d: Object at addr %d returned data w/ mean %0.3f'%(ac.counter, ac.recentData[1], np.mean(ac.recentData[0][0][:])))
+        event_args.ImageDataSet.Dispose()
+
 class AutoClass:
     #static class properties go here
     dataFormat = {ImageDataFormat.MonochromeUnsigned16:ctypes.c_ushort, ImageDataFormat.MonochromeUnsigned32:ctypes.c_uint, ImageDataFormat.MonochromeFloating32:ctypes.c_float}
@@ -62,17 +72,7 @@ class AutoClass:
         self.acquireCompleted.Set()
     
     def SetBaseFilename(self, name:str):
-        self.experiment.SetValue(ExperimentSettings.FileNameGenerationBaseFileName, name)
-
-    def experimentDataReady(self, sender, event_args):
-        if event_args is not None:
-            if event_args.ImageDataSet is not None:
-                frames = event_args.ImageDataSet.Frames
-                self.counter += frames   #in case an event returns multiple frames
-                self.recentData = self.DataToNumpy(event_args.ImageDataSet)
-                if (self.counter%1 == 0):
-                    print('Frame %d: Object at addr %d returned data w/ mean %0.3f'%(self.counter, self.recentData[1], np.mean(self.recentData[0][0][:])))
-            event_args.ImageDataSet.Dispose()                    
+        self.experiment.SetValue(ExperimentSettings.FileNameGenerationBaseFileName, name)                        
         
     def NewInstance(self,*,expName: str=''):      #design is to contain LFA class objects within the wrapper class, not give outside access
         self.auto = Automation(True, List[String]())
