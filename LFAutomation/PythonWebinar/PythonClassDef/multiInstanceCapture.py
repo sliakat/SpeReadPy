@@ -13,10 +13,11 @@ import threading
 #import multiprocessing as mp
 import time
 
-def StreamWithEvent(mgr):
-    mgr.experiment.ImageDataSetReceived += lambda sender, event_args: LFAutomation.experimentDataReady(sender, event_args, mgr)
-    mgr.ResetCounter()
-    mgr.experiment.Preview()
+def StreamWithEvent(autoObj):
+    startTime = time.perf_counter()
+    autoObj.experiment.ImageDataSetReceived += lambda sender, event_args: LFAutomation.experimentDataReady(sender, event_args, autoObj, startTime)
+    autoObj.ResetCounter()
+    autoObj.experiment.Preview()
 
 class AutomationObjectManager():
     def __init__(self, instanceNames: list):
@@ -68,7 +69,7 @@ class AutomationObjectManager():
             for item in self.objectList:
                 item.experiment.Stop()
                 try:
-                    item.experiment.ImageDataSetReceived -= lambda sender, event_args: LFAutomation.experimentDataReady(sender, event_args, item)
+                    item.experiment.ImageDataSetReceived -= lambda sender, event_args: LFAutomation.experimentDataReady(sender, event_args, item, 0)
                 except ValueError:
                     pass
         for item in self.threadList:
@@ -84,7 +85,8 @@ def InputToStop(eventAcq:bool):
     instances.DisposeAll(eventAcq=eventAcq)
 
 if __name__=="__main__":
-    instances = AutomationObjectManager(['PM1', 'PM2', 'PM3', 'PM4'])
+    #replace my experiment names with experiments you are trying to run
+    instances = AutomationObjectManager(['PM1', 'PM2'])
     stopThread = threading.Thread(target=InputToStop, daemon=False, args=(True,))    
     stopThread.start()
     instances.StreamAllWithEvent()

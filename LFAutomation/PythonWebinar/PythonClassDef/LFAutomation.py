@@ -37,14 +37,14 @@ from PrincetonInstruments.LightField.AddIns import RegionOfInterest
 from PrincetonInstruments.LightField.AddIns import Pulse 
 from PrincetonInstruments.LightField.AddIns import ImageDataFormat
 
-def experimentDataReady(sender, event_args, ac):
+def experimentDataReady(sender, event_args, ac, startTime):
     if event_args is not None:
         if event_args.ImageDataSet is not None:
             frames = event_args.ImageDataSet.Frames
             ac.counter += frames   #in case an event returns multiple frames
             ac.recentData = ac.DataToNumpy(event_args.ImageDataSet)
             if (ac.counter%100 == 0):
-                print('Frame %d: Object at addr %d returned data w/ mean %0.3f'%(ac.counter, ac.recentData[1], np.mean(ac.recentData[0][0][:])))
+                print('Frame %d: Object at addr %d returned data w/ mean %0.3f\n\tTotal time elapsed: %0.3f hrs'%(ac.counter, ac.recentData[1], np.mean(ac.recentData[0][0][:]),(time.perf_counter()-startTime)/(60*60)))
         event_args.ImageDataSet.Dispose()
 
 class AutoClass:
@@ -54,7 +54,6 @@ class AutoClass:
     
     def __init__(self):
         #per-instance properties
-        #none of these are being updated outside the class, so did not implement getter/setter
         self.auto = None
         self.experiment = None
         self.fileManager = None
