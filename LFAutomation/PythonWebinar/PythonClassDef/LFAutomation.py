@@ -12,10 +12,10 @@ import sys
 import os
 import glob
 import numpy as np
-from System import String, Int32, Int64
+from System import String, IntPtr, Int64
 from System.IO import FileAccess
 from System.Collections.Generic import List
-from System.Runtime.InteropServices import GCHandle, GCHandleType
+from System.Runtime.InteropServices import Marshal
 from System.Threading import AutoResetEvent
 import ctypes
 import time
@@ -50,6 +50,7 @@ def experimentDataReady(sender, event_args, ac, startTime):
 class AutoClass:
     #static class properties go here
     dataFormat = {ImageDataFormat.MonochromeUnsigned16:ctypes.c_ushort, ImageDataFormat.MonochromeUnsigned32:ctypes.c_uint, ImageDataFormat.MonochromeFloating32:ctypes.c_float}
+    npFormat = {ImageDataFormat.MonochromeUnsigned16:np.uint16, ImageDataFormat.MonochromeUnsigned32:np.uint32, ImageDataFormat.MonochromeFloating32:np.float32}
     byteDiv = {ImageDataFormat.MonochromeUnsigned16:2, ImageDataFormat.MonochromeUnsigned32:4, ImageDataFormat.MonochromeFloating32:4}
     
     def __init__(self):
@@ -100,16 +101,10 @@ class AutoClass:
             regions[i] = self.ROIs[i*2] * self.ROIs[i*2+1]
         dataBuf = imageDataSet.GetDataBuffer()   #.NET vector (System.Byte[])        
         #convert entre .NET vector to numpy
-        src_hndl = GCHandle.Alloc(dataBuf, GCHandleType.Pinned)
-        try:
-            src_ptr = src_hndl.AddrOfPinnedObject().ToInt64()
-            #generate array space that is the correct size
-            buf_type = self.dataFormat[dataFmt]*int(len(dataBuf)/self.byteDiv[dataFmt])
-            cbuf = buf_type.from_address(src_ptr)        
-            resultArray = np.frombuffer(cbuf, dtype=cbuf._type_)        
-        finally:        
-            if src_hndl.IsAllocated: src_hndl.Free()
-        
+        npLen = np.uint32(len(dataBuf)/self.byteDiv[dataFmt])
+        resultArray = np.zeros([npLen], dtype=self.npFormat[dataFmt])
+        npPtr = IntPtr((Int64)(resultArray.__array_interface__['data'][0]))
+        Marshal.Copy(dataBuf,0,npPtr,len(dataBuf))
         #append by region
         resultArray = np.reshape(resultArray,(frames,sum(regions)))
         for j in range(0,self.numROIs):
