@@ -86,7 +86,7 @@ def InputToStop(eventAcq:bool):
 
 if __name__=="__main__":
     #replace my experiment names with experiments you are trying to run
-    instances = AutomationObjectManager(['PM1', 'PM2'])
+    instances = AutomationObjectManager(['PM1', 'PM2', 'PM3', 'PM4'])
     stopThread = threading.Thread(target=InputToStop, daemon=False, args=(True,))    
     stopThread.start()
     instances.StreamAllWithEvent()
