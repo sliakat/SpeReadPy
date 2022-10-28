@@ -33,11 +33,12 @@ from PrincetonInstruments.LightField.AddIns import CameraSettings
 from PrincetonInstruments.LightField.AddIns import ExperimentSettings
 from PrincetonInstruments.LightField.AddIns import RegionOfInterest
 from PrincetonInstruments.LightField.AddIns import Pulse 
+from PrincetonInstruments.LightField.AddIns import ImageDataFormat
 
 quality = {1:'LowNoise', 2:'HighCap', 3:'EM', 4:'HighSpd'}
 gain = {1:'Low', 2:'Med', 3:'High'}
-dataFormat = {1:ctypes.c_uint16, 2:ctypes.c_uint32, 3:ctypes.c_float}
-byteDiv = {1:2, 2:4, 3:4}
+dataFormat = {ImageDataFormat.MonochromeUnsigned16:ctypes.c_ushort, ImageDataFormat.MonochromeUnsigned32:ctypes.c_uint, ImageDataFormat.MonochromeFloating32:ctypes.c_float}
+byteDiv = {ImageDataFormat.MonochromeUnsigned16:2, ImageDataFormat.MonochromeUnsigned32:4, ImageDataFormat.MonochromeFloating32:4}
 
 def SetROI():
     #if >= 100 rows, set to 100x100 ROI, else set to 100x1

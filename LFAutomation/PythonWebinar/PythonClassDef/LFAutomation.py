@@ -37,6 +37,16 @@ from PrincetonInstruments.LightField.AddIns import RegionOfInterest
 from PrincetonInstruments.LightField.AddIns import Pulse 
 from PrincetonInstruments.LightField.AddIns import ImageDataFormat
 
+def experimentDataReady(sender, event_args, ac, startTime):
+    if event_args is not None:
+        if event_args.ImageDataSet is not None:
+            frames = event_args.ImageDataSet.Frames
+            ac.counter += frames   #in case an event returns multiple frames
+            ac.recentData = ac.DataToNumpy(event_args.ImageDataSet)
+            if (ac.counter%100 == 0):
+                print('Frame %d: Object at addr %d returned data w/ mean %0.3f\n\tTotal time elapsed: %0.3f hrs'%(ac.counter, ac.recentData[1], np.mean(ac.recentData[0][0][:]),(time.perf_counter()-startTime)/(60*60)))
+        event_args.ImageDataSet.Dispose()
+
 class AutoClass:
     #static class properties go here
     dataFormat = {ImageDataFormat.MonochromeUnsigned16:ctypes.c_ushort, ImageDataFormat.MonochromeUnsigned32:ctypes.c_uint, ImageDataFormat.MonochromeFloating32:ctypes.c_float}
@@ -44,7 +54,6 @@ class AutoClass:
     
     def __init__(self):
         #per-instance properties
-        #none of these are being updated outside the class, so did not implement getter/setter
         self.auto = None
         self.experiment = None
         self.fileManager = None
@@ -53,12 +62,16 @@ class AutoClass:
         self.counter = 0
         self.ROIs = np.array([],dtype=np.uint32)
         self.numROIs = 0
+        self.recentData = ([],0)    #tuple[0]: list of data (per ROI), tuple[1]: id of calling object
     
     def ResetCounter(self):
         self.counter = 0
         
     def acquire_complete(self, sender, event_args):
         self.acquireCompleted.Set()
+    
+    def SetBaseFilename(self, name:str):
+        self.experiment.SetValue(ExperimentSettings.FileNameGenerationBaseFileName, name)                        
         
     def NewInstance(self,*,expName: str=''):      #design is to contain LFA class objects within the wrapper class, not give outside access
         self.auto = Automation(True, List[String]())
@@ -104,7 +117,7 @@ class AutoClass:
                 outData.append(np.reshape(resultArray[:,0:sum(regions[0:1])],(frames,self.ROIs[j*2],self.ROIs[j*2+1])))
             else:
                 outData.append(np.reshape(resultArray[:,sum(regions[0:j]):sum(regions[0:j+1])],(frames,self.ROIs[j*2],self.ROIs[j*2+1])))         
-        return outData
+        return (outData, id(self))
         
     def CreateSpeFile(self, name, rows, cols, numFrames, imgFormat):   #name should include full path, incl dir
         roi = [RegionOfInterest(0,0,cols,rows,1,1)]
@@ -157,16 +170,16 @@ class AutoClassNiche(AutoClass):    #these are for niche functions or used for d
                 return []
             else:
                 start = time.perf_counter_ns()
-                dataArr = self.DataToNumpy(dataSet)
+                data = self.DataToNumpy(dataSet)
                 end = time.perf_counter_ns()
                 processTime = (end-start)/1e6
-                #print('Data mean (ROI 1): %0.3f cts, processing time: %0.3f ms'%(np.mean(dataArr[0][:]), processTime))
+                print('Data mean (ROI 1): %0.3f cts, processing time: %0.3f ms\n\tCalling object address: %d'%(np.mean(data[0][0][:]), processTime, data[1]))
                 if self.counter%100 == 0:
                     print('%d Captures parsed (%d frames each), Total time elapsed: %0.3f hrs'%(self.counter,numFrames,(time.perf_counter()-startTime)/(60*60)))
                 try:
                     dataSet.Dispose()
                 finally:
-                    return dataArr            
+                    return data            
         else:
             return []
         

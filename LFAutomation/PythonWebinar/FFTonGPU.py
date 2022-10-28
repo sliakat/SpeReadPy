@@ -38,6 +38,7 @@ clr.AddReference('PrincetonInstruments.LightFieldAddInSupportServices')
 # PI imports
 from PrincetonInstruments.LightField.Automation import Automation
 from PrincetonInstruments.LightField.AddIns import RegionOfInterest
+from PrincetonInstruments.LightField.AddIns import ImageDataFormat
 
 lock = threading.Lock()     #lock for event callback
 
@@ -167,8 +168,8 @@ class DisplayContainer:
 
 class AutoClass:        #object for LF automation
     #static class properties go here
-    dataFormat = {1:ctypes.c_ushort, 2:ctypes.c_uint, 3:ctypes.c_float}
-    byteDiv = {1:2, 2:4, 3:4}
+    dataFormat = {ImageDataFormat.MonochromeUnsigned16:ctypes.c_ushort, ImageDataFormat.MonochromeUnsigned32:ctypes.c_uint, ImageDataFormat.MonochromeFloating32:ctypes.c_float}
+    byteDiv = {ImageDataFormat.MonochromeUnsigned16:2, ImageDataFormat.MonochromeUnsigned32:4, ImageDataFormat.MonochromeFloating32:4}
     def __init__(self):
         self.auto = None
         self.experiment = None
