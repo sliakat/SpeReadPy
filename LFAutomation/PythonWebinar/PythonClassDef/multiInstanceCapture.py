@@ -65,6 +65,7 @@ class AutomationObjectManager():
 
     def StopAll(self,*,eventAcq: bool=False):
         self.Stop = True
+        print('Stopping all instances.')
         if eventAcq:
             for item in self.objectList:
                 item.experiment.Stop()
@@ -77,6 +78,7 @@ class AutomationObjectManager():
         self.Stop = False
     def DisposeAll(self,*,eventAcq: bool=False):
         self.StopAll(eventAcq=eventAcq)
+        print('Disposing all instances.')
         for item in self.objectList:
             item.CloseInstance()
 
