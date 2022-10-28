@@ -1,3 +1,5 @@
+Check PythonClassDef folder for additional object-oriented applications
+
 Code used for the three part webinar that can be found on our website (https://www.princetoninstruments.com/products/software-family/lightfield)
 
 Direct links to webinar videos:<br/>
@@ -5,9 +7,6 @@ Direct links to webinar videos:<br/>
   -Part 2: https://www.youtube.com/watch?v=H0lwmTkYU_M  
   -Part 3: https://www.youtube.com/watch?v=kMhDYoU_pAU
 
-Live FFT Application Example:<br/>
-  -ftp://ftp.princetoninstruments.com/Public/TechSupport/SL/Automation/Webinar/PythonAutomation.LiveFFT.mkv
-  
 Gain Check: <br/>
   -https://www.youtube.com/watch?v=MHig8gGPP48
   -new concepts include getting settings capabilities and ranges, looping through possible camera settings configurations.
