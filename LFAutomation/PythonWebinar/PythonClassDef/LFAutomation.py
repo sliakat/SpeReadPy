@@ -17,10 +17,8 @@ from System.IO import FileAccess
 from System.Collections.Generic import List
 from System.Runtime.InteropServices import Marshal
 from System.Threading import AutoResetEvent
-import ctypes
 import time
 clr.AddReference('System.Windows.Forms')
-import gc
 
 # Add needed dll references
 sys.path.append(os.environ['LIGHTFIELD_ROOT'])
@@ -49,7 +47,6 @@ def experimentDataReady(sender, event_args, ac, startTime):
 
 class AutoClass:
     #static class properties go here
-    dataFormat = {ImageDataFormat.MonochromeUnsigned16:ctypes.c_ushort, ImageDataFormat.MonochromeUnsigned32:ctypes.c_uint, ImageDataFormat.MonochromeFloating32:ctypes.c_float}
     npFormat = {ImageDataFormat.MonochromeUnsigned16:np.uint16, ImageDataFormat.MonochromeUnsigned32:np.uint32, ImageDataFormat.MonochromeFloating32:np.float32}
     byteDiv = {ImageDataFormat.MonochromeUnsigned16:2, ImageDataFormat.MonochromeUnsigned32:4, ImageDataFormat.MonochromeFloating32:4}
     
