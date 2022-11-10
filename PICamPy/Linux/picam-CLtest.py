@@ -56,26 +56,28 @@ if __name__ == "__main__":
     binRows = 0
     ParseArgs()         #parse any input args
     
-    cam = picam.Camera()
+    #For Linux / Windows lines, comment out the one you are not using
+    #Linux
+    cam = picam.Camera(dispType=1)
+    #Windows
+    #cam = picam.Camera(libPath = 'C:\\Program Files\\Common Files\\Princeton Instruments\\Picam\\Runtime\\Picam.dll',dispType=1)
     if cam.OpenCamera():
         cam.SetExposure(exposure)     #exposure time in ms
         if speed == 0:
             cam.SetFastestADCSpeed()
         else:
             cam.SetADCSpeed(speed)
-        #cam.SetCustomSensorAndROI(8192,8192)
+
         if roiSet:
             cam.SetCenterROI(centerROIDim)       #use to try out setting nxn square ROI in center of active region
         elif binRows > 0:
             cam.SetCenterBinROI(binRows)        #bin n nows in center (use full sensor width)
+        
         if preview:
             cam.AcquireCB(frames=frameCount, bufNomWidth=20)       #asynchronously acquire with callback and preview n frames w/ opencv (does not save data)
-            #cam.AcquireCB(frames=frameCount)
         else:
             cam.Acquire(frames=frameCount, bufNomWidth=20, saveDisk=saveDisk)   #launch an acquisiton in a separate thread
-            #cam.Acquire(frames=frameCount)
         cam.DisplayCameraData()  #need to call display function to make multi-threading Acquire work, or else need to join the Acquire thread manually
-        #can also set launchDisp=True in the Acquire call to make those functions block (useful for interactive Python testing)
     cam.Close()
 
     if not preview:
