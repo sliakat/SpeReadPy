@@ -1,6 +1,6 @@
-picam.py contains the class definition for Camera, which can be instantiated and then controlled via member functions. Functions are basic and designed for demonstration. Note that this is a work in progress and will be periodically updated.
+picam.py contains the class definition for Camera, which can be instantiated and then controlled via member functions. Functions are designed for demonstration and should not be considered an official API. Note that this is a work in progress and will be periodically updated.
 
-picam_opencv.py is a test script to show how the Camera class can be used to quickly open and acquire with a camera.
+picam-CLtest.py is a test script to show how the Camera class can be used to quickly open and acquire with a camera.
 
 This example was made with Linux in mind, but if the libPath kwarg in the constructor is entered as the path to Picam.dll in Windows, the code should work in Windows as well.
 
@@ -17,7 +17,15 @@ also verified working with**:
 - numpy 1.23.2
 - opencv-python 4.6.0.66
 - PICam 5.12.3.2209
-**WE DO NOT OFFICIALLY SUPPORT ANY DISTRO OUTSIDE OF CENTOS7.
+
+Windows test (with MPL):
+- Windows 10 ENterprise (build 19045.2130)
+- Python 3.10.6
+- numpy 1.23.3
+- matplotlib 3.6.0
+- PICam 5.12.3.2209
+
+**WE DO NOT OFFICIALLY SUPPORT ANY LINUX DISTRO OUTSIDE OF CENTOS7.
 WHILE I GOT PICAM TO WORK ON UBUNTU, THERE WERE PACKAGE CHANGES
 I HAD TO MAKE. IF YOU WANT TO RUN ON A NON-CENTOS7 DISTRO, YOU
 WILL NEED TO FIGURE OUT WHAT CHANGES ARE NEEDED FOR YOUR DISTRO**
