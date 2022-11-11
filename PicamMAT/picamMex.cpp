@@ -1,6 +1,7 @@
 #include "mex.hpp"
 #include "mexAdapter.hpp"
 #include "picam.h"
+#include <stdio.h>
 
 //inputs will be integers:
 //0: initialize and open
@@ -24,6 +25,13 @@ public:
         int* errPtr;
         ArrayFactory factoryObject;
         const int inputInt = inputs[0][0];
+        debug_ = false;
+        //inputting anything as a second arg will turn on debug
+        if (inputs.size() == 2)
+        {
+            debug_ = true;              
+        }
+        WriteString("Read input");
         switch(inputInt){
             case 0: InitAndOpen(errPtr);
                     break;
@@ -48,9 +56,13 @@ public:
     void InitAndOpen(int* errPtr)
     {
         Picam_InitializeLibrary();
+        WriteString("Initialized.");
         int err = Picam_OpenFirstCamera(camera_);
+        WriteString("Opened.");
         Picam_GetCameraID(*camera_,id_);
+        WriteString("Got ID.");
         Picam_GetParameterFloatingPointValue(*camera_, PicamParameter_ReadoutRateCalculation, &readRate_);
+        WriteString("Got Read Rate.");
         *(errPtr) = err;
     }
     void AcquireSingle(int *errPtr)
@@ -65,19 +77,23 @@ public:
         {
             timeout_ = 3000;
         }
-        
+        WriteString("Before Acquire.");
         int err = Picam_Acquire(*camera_, 1, timeout_, &data, &errors);
+        WriteString("After Acquire.");
         *(errPtr) = err;
         
         if (err == 0)
         {
             GetXandY();
+            WriteString("Got X and Y.");
             Picam_GetParameterIntegerValue(*camera_, PicamParameter_ReadoutStride, &readoutStride_);
             piint readCount = data.readout_count;        
             //assume 16-bit data
             pi16u* framePtr = nullptr;
             framePtr = reinterpret_cast<pi16u*>(data.initial_readout);
+            WriteString("Successfully cast.");
             std::vector<pi16u> imageData16(framePtr, framePtr + (readCount * (readoutStride_ / 2)));
+            WriteString("Created vector.");
 			imageData16_ = imageData16;
         }        
     }
@@ -135,4 +151,19 @@ private:
     int rows_;
     int cols_;
     int timeout_;
+    FILE* pFile_;
+    char string_[128];
+    bool debug_;
+    
+    //writes only if debug_ is set to True
+    void WriteString(char* src)
+    {
+        if (debug_)
+        {
+            _snprintf_s(string_, 128, "%s\n", src);
+            pFile_ = fopen("mexOutputStrings.txt","a");
+            fprintf(pFile_, "%s", string_);
+            fclose(pFile_);
+        }       
+    }
 };
