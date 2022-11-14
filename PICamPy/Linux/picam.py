@@ -1169,7 +1169,8 @@ class Camera():
         return actualFrames.value
 
     #function to process 16-bit data
-    def ProcessData(self, data, readStride,*,saveData: bool=True):        
+    def ProcessData(self, data, readStride,*,saveData: bool=True):
+        print(data.readout_count, 'readouts in callback.')        
         start = time.perf_counter_ns()
         x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_byte))#size of full readout        
         if data.readout_count > 0:
@@ -1180,42 +1181,47 @@ class Camera():
                 roiCols = np.shape(self.fullData[k])[2]
                 roiRows = np.shape(self.fullData[k])[1]         
                 readCounter = 0
-                for i in range(0,np.uint64((data.readout_count * self.framesPerRead.value))):    #readout by readout
-                    #start = time.perf_counter_ns()
-                    #offsetA = np.int64((i * readStride) / 2) + roiOffset
-                    offsetA = np.int64((i * self.frameStride.value)) + roiOffset
-                    copySize = int(roiCols*roiRows*self.bpp)
-                    copyArray = np.zeros([np.int64(roiRows*roiCols)], dtype=np.uint16)
-                    copyAddr = copyArray.__array_interface__['data'][0]
-                    #print(type(copyAddr), type(int(ctypes.addressof(x.contents)+offsetA)), type(ctypes.addressof(x.contents)), type(copySize))
-                    ctypes.memmove(copyAddr, int(ctypes.addressof(x.contents)+offsetA), copySize)                        
-                    #the Write() worker daemon will fill in the fullData array from the queue
-                    #the processing function is free to continue
-                    if saveData:
-                        q.put([k, readCounter + self.counter, roiRows, roiCols, copyArray])
-                        #handle metadata if present -- send to WriteMeta() daemon
-                        metaBytes = int(self.frameStride.value-self.frameSize.value)
-                        if metaBytes > 0 and k == len(self.fullData)-1:
-                            offsetMeta = offsetA + copySize
-                            metaCopyArray = ctypes.ARRAY(ctypes.c_ubyte, metaBytes)()
-                            ctypes.memmove(ctypes.addressof(metaCopyArray), int(ctypes.addressof(x.contents)+offsetMeta), metaBytes)
-                            qMeta.put(metaCopyArray)
-                    if k==0 and i == np.uint64((data.readout_count * self.framesPerRead.value)) - 1:
-                        with lock:
-                            self.newestFrame = copyArray
-                    readCounter += 1
-                    #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+                readStrideOffset = 0
+                for j in range(0,data.readout_count):       #readout by readout                               
+                    for i in range(0,np.uint64(self.framesPerRead.value)):    #frame by frame
+                        #start = time.perf_counter_ns()
+                        #offsetA = np.int64((i * readStride) / 2) + roiOffset
+                        offsetA = np.int64((i * self.frameStride.value)) + roiOffset + readStrideOffset
+                        copySize = int(roiCols*roiRows*self.bpp)
+                        copyArray = np.zeros([np.int64(roiRows*roiCols)], dtype=np.uint16)
+                        copyAddr = copyArray.__array_interface__['data'][0]
+                        #print(type(copyAddr), type(int(ctypes.addressof(x.contents)+offsetA)), type(ctypes.addressof(x.contents)), type(copySize))
+                        ctypes.memmove(copyAddr, int(ctypes.addressof(x.contents)+offsetA), copySize)                        
+                        #the Write() worker daemon will fill in the fullData array from the queue
+                        #the processing function is free to continue
+                        if saveData:
+                            q.put([k, readCounter + self.counter, roiRows, roiCols, copyArray])
+                            #handle metadata if present -- send to WriteMeta() daemon
+                            metaBytes = int(self.frameStride.value-self.frameSize.value)
+                            if metaBytes > 0 and k == len(self.fullData)-1:
+                                offsetMeta = offsetA + copySize
+                                metaCopyArray = ctypes.ARRAY(ctypes.c_ubyte, metaBytes)()
+                                ctypes.memmove(ctypes.addressof(metaCopyArray), int(ctypes.addressof(x.contents)+offsetMeta), metaBytes)
+                                qMeta.put(metaCopyArray)
+                        if k==0 and i == np.uint64((data.readout_count * self.framesPerRead.value)) - 1:
+                            with lock:
+                                self.newestFrame = copyArray
+                        readCounter += 1
+                        #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+                    readStrideOffset += self.rStride.value
                 roiOffset = roiOffset + np.int64(roiCols*roiRows*self.bpp)
+                
             with lock:
                 self.counter += data.readout_count
         #print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
         if data.readout_count > 0:
             qTimes.put([((time.perf_counter_ns() - start)/1e6)/data.readout_count])
+        #time.sleep(0.150) #-- debug only -- this is to force multiple readouts in a callback
 
     #function to process 32-bit data (>16 bits: <=32 bits)
     def ProcessData32(self, data, readStride,*,saveData: bool=True):        
         start = time.perf_counter_ns()
-        x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_byte))#size of full readout
+        x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_byte))#size of full readout        
         if data.readout_count > 0:
             #this part goes readout by readout
             #get ROIs for more generic processing when there are multiple ROIs -- assumes no metada -> will need additional offset code for that                
@@ -1224,32 +1230,36 @@ class Camera():
                 roiCols = np.shape(self.fullData[k])[2]
                 roiRows = np.shape(self.fullData[k])[1]         
                 readCounter = 0
-                for i in range(0,np.uint64((data.readout_count * self.framesPerRead.value))):    #readout by readout
-                    #start = time.perf_counter_ns()
-                    #offsetA = np.int64((i * readStride) / 2) + roiOffset
-                    offsetA = np.int64((i * self.frameStride.value)) + roiOffset
-                    copySize = int(roiCols*roiRows*self.bpp)
-                    copyArray = np.zeros([np.int64(roiRows*roiCols)], dtype=np.uint32)
-                    copyAddr = copyArray.__array_interface__['data'][0]
-                    #print(type(copyAddr), type(int(ctypes.addressof(x.contents)+offsetA)), type(ctypes.addressof(x.contents)), type(copySize))
-                    ctypes.memmove(copyAddr, int(ctypes.addressof(x.contents)+offsetA), copySize)
-                    if saveData:                        
+                readStrideOffset = 0
+                for j in range(0,data.readout_count):       #readout by readout                               
+                    for i in range(0,np.uint64(self.framesPerRead.value)):    #frame by frame
+                        #start = time.perf_counter_ns()
+                        #offsetA = np.int64((i * readStride) / 2) + roiOffset
+                        offsetA = np.int64((i * self.frameStride.value)) + roiOffset + readStrideOffset
+                        copySize = int(roiCols*roiRows*self.bpp)
+                        copyArray = np.zeros([np.int64(roiRows*roiCols)], dtype=np.uint32)
+                        copyAddr = copyArray.__array_interface__['data'][0]
+                        #print(type(copyAddr), type(int(ctypes.addressof(x.contents)+offsetA)), type(ctypes.addressof(x.contents)), type(copySize))
+                        ctypes.memmove(copyAddr, int(ctypes.addressof(x.contents)+offsetA), copySize)                        
                         #the Write() worker daemon will fill in the fullData array from the queue
                         #the processing function is free to continue
-                        q.put([k, readCounter + self.counter, roiRows, roiCols, copyArray])
-                        #handle metadata if present -- send to WriteMeta() daemon
-                        metaBytes = int(self.frameStride.value-self.frameSize.value)
-                        if metaBytes > 0:
-                            offsetMeta = offsetA + copySize
-                            metaCopyArray = ctypes.ARRAY(ctypes.c_ubyte, metaBytes)()
-                            ctypes.memmove(ctypes.addressof(metaCopyArray), int(ctypes.addressof(x.contents)+offsetMeta), metaBytes)
-                            qMeta.put(metaCopyArray)
-                    if k==0 and i == np.uint64((data.readout_count * self.framesPerRead.value)) - 1:
-                        with lock:
-                            self.newestFrame = copyArray
-                    readCounter += 1
-                    #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+                        if saveData:
+                            q.put([k, readCounter + self.counter, roiRows, roiCols, copyArray])
+                            #handle metadata if present -- send to WriteMeta() daemon
+                            metaBytes = int(self.frameStride.value-self.frameSize.value)
+                            if metaBytes > 0 and k == len(self.fullData)-1:
+                                offsetMeta = offsetA + copySize
+                                metaCopyArray = ctypes.ARRAY(ctypes.c_ubyte, metaBytes)()
+                                ctypes.memmove(ctypes.addressof(metaCopyArray), int(ctypes.addressof(x.contents)+offsetMeta), metaBytes)
+                                qMeta.put(metaCopyArray)
+                        if k==0 and i == np.uint64((data.readout_count * self.framesPerRead.value)) - 1:
+                            with lock:
+                                self.newestFrame = copyArray
+                        readCounter += 1
+                        #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+                    readStrideOffset += self.rStride.value
                 roiOffset = roiOffset + np.int64(roiCols*roiRows*self.bpp)
+                
             with lock:
                 self.counter += data.readout_count
         #print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
