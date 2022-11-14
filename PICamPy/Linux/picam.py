@@ -20,6 +20,7 @@ os.environ["GENICAM_ROOT_V2_4"] = "/opt/pleora/ebus_sdk/x86_64/lib/genicam/"    
 lock = threading.Lock()
 q = queue.Queue()
 qTimes = queue.Queue()
+qMeta = queue.Queue()
 
 displayType = {0:'opencv', 1:'matplotlib'}
 
@@ -29,6 +30,9 @@ def calcParam(v,c,n):
 #check picam.h for parameter definitions -- maybe turn this into a dictionary so I don't need to use GetEnumString
 paramFrames = ctypes.c_int(calcParam(6,2,40))    #PicamParameter_ReadoutCount
 paramStride = ctypes.c_int(calcParam(1,1,45))    #PicamParameter_ReadoutStride
+paramFrameSize = ctypes.c_int(calcParam(1,1,42))
+paramFrameStride = ctypes.c_int(calcParam(1,1,43))
+paramFramesPerRead = ctypes.c_int(calcParam(1,1,44))
 paramROIs = ctypes.c_int(calcParam(5, 4, 37))    #PicamParameter_Rois
 paramReadRate=ctypes.c_int(calcParam(2,1,50))    #PicamParameter_ReadoutRateCalculation
 paramExpose=ctypes.c_int(calcParam(2,2,23))        #PicamParameter_ExposureTime
@@ -60,6 +64,13 @@ paramShutterOpeningDelay=ctypes.c_int(calcParam(2,2,46))
 paramSensorTemperatureReading = ctypes.c_int(calcParam(2,1,15))
 paramSensorTemperatureSetPoint = ctypes.c_int(calcParam(2,2,14))
 paramSensorTemperatureStatus = ctypes.c_int(calcParam(4,1,16))
+
+#metadata related
+paramTimeStamps = ctypes.c_int(calcParam(4,3,68))
+paramTimeStampResolution = ctypes.c_int(calcParam(6,3,69))
+paramTimeStampBitDepth = ctypes.c_int(calcParam(1,3,70))
+paramTrackFrames = ctypes.c_int(calcParam(3,3,71))
+paramFrameTrackingBitDepth = ctypes.c_int(calcParam(1,3,72))
 
 #display related objects/ functions
 class ImageWindowMPL(QMainWindow):
@@ -270,6 +281,30 @@ def Write(camera):
             camera.fullData[roiNum][frame] = np.reshape(readoutDat, (roiRows, roiCols))
         q.task_done()
 
+def WriteMeta(camera):
+    time.sleep(.001)
+    while True:
+        #will be a ctypes array of bytes
+        queueItem = qMeta.get()
+        #self.metaDict = {'TimeStampStart':[False,0,0], 'TimeStampStop':[False,0,0], 'FrameNo':[False,0], 'GateDelay':[False,0,0], 'ModPhase':[False,0]}
+        #default seems to be 8 byte depth -- use long int and double
+        offset = 0
+        #print(ctypes.byref(queueItem), ctypes.byref(queueItem, ctypes.sizeof(ctypes.c_ubyte)*20))
+        for key in camera.metaDict:
+            if camera.metaDict[key][0] == True:
+                if key == 'FrameNo':
+                    value = ctypes.c_ulonglong(0)
+                else:
+                    value = ctypes.c_longlong(0)
+                ctypes.memmove(ctypes.byref(value), ctypes.byref(queueItem, ctypes.sizeof(ctypes.c_ubyte)*offset), ctypes.sizeof(value))
+                offset += np.int64(np.floor((camera.metaDict[key][1] + 7)/8))
+                if key == 'FrameNo':
+                    printVal = '%d'%(value.value)
+                else:
+                    printVal = '%0.3fms'%(value.value * 1000 / camera.metaDict[key][2])
+                print(key, '\t%s'%(printVal))
+        qMeta.task_done()
+
 class Event():
     def __init__(self):
         self.eventHandlers = []
@@ -282,6 +317,14 @@ class Event():
     def __call__(self, *args, **keywargs):
         for eventhandler in self.eventHandlers:
             eventhandler(*args, **keywargs)
+
+class MetaData():
+    def __init__(self):
+        self.timeStarted = None
+        self.timeStopped = None
+        self.frameNo = None
+        self.gateDelay = None
+        self.modPhase = None
 
 class ctypesStruct(ctypes.Structure):
     def __eq__(self, compareTo):
@@ -404,6 +447,10 @@ class Camera():
         self.fullData = []  #will include ROIs
         self.newestFrame = np.array([])
         self.rStride = ctypes.c_int(0)
+        self.frameSize = ctypes.c_int(0)
+        self.frameStride = ctypes.c_int(0)
+        self.framesPerRead = ctypes.c_int(0)
+
         self.bits = 0   #bit depth of the camera referenced by self.cam
         self.display = False
         self.runningStatus = ctypes.c_bool(False)
@@ -411,6 +458,9 @@ class Camera():
         self.circBuff = ctypes.ARRAY(ctypes.c_ubyte,0)()
         self.aBuf = acqBuf(0,0)
         self.roisPy=[]
+        self.metaData = []
+        #[enabled, bit depth, res]
+        self.metaDict = {'TimeStampStart':[False,0,0], 'TimeStampStop':[False,0,0], 'FrameNo':[False,0], 'GateDelay':[False,0,0], 'ModPhase':[False,0]}        
         self.saveDisk = False
         self.eventTimer = 0
         self.acqTimer = 0
@@ -654,6 +704,12 @@ class Camera():
             self.GetFirstROI()  #for display
         self.CommitAndChange()
 
+    #fills in strides
+    def GetSizeParameters(self):
+        self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramFrameSize, ctypes.byref(self.frameSize))
+        self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramFrameStride, ctypes.byref(self.frameStride))
+        self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramFramesPerRead, ctypes.byref(self.framesPerRead))
+        self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramStride, ctypes.byref(self.rStride))
 
     def Commit(self,*,printMessage: bool=True):
         #paramArray = ctypes.pointer(ctypes.c_int(0))
@@ -665,6 +721,10 @@ class Camera():
         bitsInt = ctypes.c_int(0)
         self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramAdcBitDepth, ctypes.byref(bitsInt))
         self.bits = bitsInt.value
+        if self.bits > 0 and self.bits <=16:
+            self.bpp = 2
+        elif self.bits <=32:
+            self.bpp = 4
         if failedCount.value > 0:
             print('Failed to commit %d parameters. Cannot acquire.'%(failedCount.value))
             self.picamLib.Picam_DestroyParameters(paramArray)
@@ -716,6 +776,8 @@ class Camera():
             self.picamLib.Picam_DestroyString(enumStr)
         self.picamLib.Picam_DestroyParameters(paramArray)
         self.Commit(printMessage=False)
+        self.GetSizeParameters()        
+
 
     def CheckExistenceAndRelevance(self, param: int):
         outputDict = {0: 'Exists and Valid', 1: 'Does not Exist', 2: 'Exists, not Relevant'}
@@ -1110,22 +1172,21 @@ class Camera():
     def ProcessData(self, data, readStride,*,saveData: bool=True):
         with lock:
             start = time.perf_counter_ns()
-            #copy entire RO buffer to np array
-            x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_uint16))#size of full readout
-            xAlloc = ctypes.c_uint16*np.int64(readStride/2)*data.readout_count
-            addr = ctypes.addressof(x.contents)
-            numpyRO = np.copy(np.frombuffer(xAlloc.from_address(addr),dtype=np.uint16)) 
-            #print('Buffer copy time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))           
+            x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_byte))#size of full readout           
             if data.readout_count > 0:                
                 #this part processes only the final frame for display
                 if self.counter % 1 == 0:
                     roiCols = np.shape(self.fullData[0])[2]
                     roiRows = np.shape(self.fullData[0])[1]
-                    offsetA = np.int64((data.readout_count-1) * (readStride / 2)) + 0     
-                    readoutDat = numpyRO[offsetA:np.int64(roiCols*roiRows)+offsetA]
-                    self.newestFrame = readoutDat
-                    #move reshape to display func            
-                    #self.newestFrame = np.reshape(readoutDat, (roiRows, roiCols))
+                    offsetA = np.int64(((data.readout_count-1) * (readStride)) + ((self.framesPerRead.value-1)*self.frameStride.value))
+                    #offsetAddr = ctypes.cast(x[offsetA])
+                    copySize = int(roiCols*roiRows*self.bpp)
+                    copyArray = np.zeros([np.int64(roiRows*roiCols)], dtype=np.uint16)
+                    copyAddr = copyArray.__array_interface__['data'][0]
+                    #print(type(copyAddr), type(int(ctypes.addressof(x.contents)+offsetA)), type(ctypes.addressof(x.contents)), type(copySize))
+                    ctypes.memmove(copyAddr, int(ctypes.addressof(x.contents)+offsetA), copySize)
+                    #print(copyArray[0])
+                    self.newestFrame = copyArray
             #print('Total preview time %0.2f ms'%((time.perf_counter_ns() - start)/1e6))            
 
             if saveData and data.readout_count > 0:
@@ -1136,17 +1197,28 @@ class Camera():
                     roiCols = np.shape(self.fullData[k])[2]
                     roiRows = np.shape(self.fullData[k])[1]         
                     readCounter = 0
-                    for i in range(0,data.readout_count):    #readout by readout
+                    for i in range(0,np.uint64((data.readout_count * self.framesPerRead.value))):    #readout by readout
                         #start = time.perf_counter_ns()
-                        offsetA = np.int64((i * readStride) / 2) + roiOffset
-                        readoutDat = numpyRO[offsetA:np.int64(roiCols*roiRows)+offsetA]
+                        #offsetA = np.int64((i * readStride) / 2) + roiOffset
+                        offsetA = np.int64((i * self.frameStride.value)) + roiOffset
+                        copySize = int(roiCols*roiRows*self.bpp)
+                        copyArray = np.zeros([np.int64(roiRows*roiCols)], dtype=np.uint16)
+                        copyAddr = copyArray.__array_interface__['data'][0]
+                        #print(type(copyAddr), type(int(ctypes.addressof(x.contents)+offsetA)), type(ctypes.addressof(x.contents)), type(copySize))
+                        ctypes.memmove(copyAddr, int(ctypes.addressof(x.contents)+offsetA), copySize)                        
                         #the Write() worker daemon will fill in the fullData array from the queue
                         #the processing function is free to continue
-                        q.put([k, readCounter + self.counter, roiRows, roiCols, readoutDat])
-                        #startA = time.perf_counter_ns()
+                        q.put([k, readCounter + self.counter, roiRows, roiCols, copyArray])
+                        #handle metadata if present -- send to WriteMeta() daemon
+                        metaBytes = int(self.frameStride.value-self.frameSize.value)
+                        if metaBytes > 0:
+                            offsetMeta = offsetA + copySize
+                            metaCopyArray = ctypes.ARRAY(ctypes.c_ubyte, metaBytes)()
+                            ctypes.memmove(ctypes.addressof(metaCopyArray), int(ctypes.addressof(x.contents)+offsetMeta), metaBytes)
+                            qMeta.put(metaCopyArray)
                         readCounter += 1
                         #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
-                    roiOffset = roiOffset + np.int64(roiCols*roiRows)
+                    roiOffset = roiOffset + np.int64(roiCols*roiRows*self.bpp)
             self.counter += data.readout_count
         #print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
         if data.readout_count > 0:
@@ -1156,21 +1228,22 @@ class Camera():
     def ProcessData32(self, data, readStride,*,saveData: bool=True):
         with lock:
             start = time.perf_counter_ns()
-            #print(data.readout_count)
-            #copy entire RO buffer to np array
-            x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_uint32))#size of full readout
-            xAlloc = ctypes.c_uint32*np.int64(readStride/4)*data.readout_count
-            addr = ctypes.addressof(x.contents)
-            numpyRO = np.copy(np.frombuffer(xAlloc.from_address(addr),dtype=np.uint32)) 
-            #print('Buffer copy time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))           
+            x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_byte))#size of full readout           
             if data.readout_count > 0:                
                 #this part processes only the final frame for display
-                roiCols = np.shape(self.fullData[0])[2]
-                roiRows = np.shape(self.fullData[0])[1]
-                offsetA = np.int64((data.readout_count-1) * (readStride / 4)) + 0     
-                readoutDat = numpyRO[offsetA:np.int32(roiCols*roiRows)+offsetA]
-                self.newestFrame = readoutDat
-            #print('Total preview time %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+                if self.counter % 1 == 0:
+                    roiCols = np.shape(self.fullData[0])[2]
+                    roiRows = np.shape(self.fullData[0])[1]
+                    offsetA = np.int64(((data.readout_count-1) * (readStride)) + ((self.framesPerRead.value-1)*self.frameStride.value))
+                    #offsetAddr = ctypes.cast(x[offsetA])
+                    copySize = int(roiCols*roiRows*self.bpp)
+                    copyArray = np.zeros([np.int64(roiRows*roiCols)], dtype=np.uint32)
+                    copyAddr = copyArray.__array_interface__['data'][0]
+                    #print(type(copyAddr), type(int(ctypes.addressof(x.contents)+offsetA)), type(ctypes.addressof(x.contents)), type(copySize))
+                    ctypes.memmove(copyAddr, int(ctypes.addressof(x.contents)+offsetA), copySize)
+                    #print(copyArray[0])
+                    self.newestFrame = copyArray
+            #print('Total preview time %0.2f ms'%((time.perf_counter_ns() - start)/1e6))            
 
             if saveData and data.readout_count > 0:
                 #this part goes readout by readout
@@ -1180,18 +1253,30 @@ class Camera():
                     roiCols = np.shape(self.fullData[k])[2]
                     roiRows = np.shape(self.fullData[k])[1]         
                     readCounter = 0
-                    for i in range(0,data.readout_count):    #readout by readout
+                    for i in range(0,np.uint64((data.readout_count * self.framesPerRead.value))):    #readout by readout
                         #start = time.perf_counter_ns()
-                        offsetA = np.int64((i * readStride) / 4) + roiOffset
-                        readoutDat = numpyRO[offsetA:np.int64(roiCols*roiRows)+offsetA]
+                        #offsetA = np.int64((i * readStride) / 2) + roiOffset
+                        offsetA = np.int64((i * self.frameStride.value)) + roiOffset
+                        copySize = int(roiCols*roiRows*self.bpp)
+                        copyArray = np.zeros([np.int64(roiRows*roiCols)], dtype=np.uint32)
+                        copyAddr = copyArray.__array_interface__['data'][0]
+                        #print(type(copyAddr), type(int(ctypes.addressof(x.contents)+offsetA)), type(ctypes.addressof(x.contents)), type(copySize))
+                        ctypes.memmove(copyAddr, int(ctypes.addressof(x.contents)+offsetA), copySize)                        
                         #the Write() worker daemon will fill in the fullData array from the queue
                         #the processing function is free to continue
-                        q.put([k, readCounter + self.counter, roiRows, roiCols, readoutDat])
+                        q.put([k, readCounter + self.counter, roiRows, roiCols, copyArray])
+                        #handle metadata if present -- send to WriteMeta() daemon
+                        metaBytes = int(self.frameStride.value-self.frameSize.value)
+                        if metaBytes > 0:
+                            offsetMeta = offsetA + copySize
+                            metaCopyArray = ctypes.ARRAY(ctypes.c_ubyte, metaBytes)()
+                            ctypes.memmove(ctypes.addressof(metaCopyArray), int(ctypes.addressof(x.contents)+offsetMeta), metaBytes)
+                            qMeta.put(metaCopyArray)
                         readCounter += 1
                         #print('Loop time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
-                    roiOffset = roiOffset + np.int32(roiCols*roiRows)
+                    roiOffset = roiOffset + np.int64(roiCols*roiRows*self.bpp)
             self.counter += data.readout_count
-        #print('Total process time (%d bit data): %0.2f ms'%(self.bits, (time.perf_counter_ns() - start)/1e6))
+        #print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
         if data.readout_count > 0:
             qTimes.put([((time.perf_counter_ns() - start)/1e6)/data.readout_count])
     
@@ -1209,6 +1294,41 @@ class Camera():
             print('ROI %d shape: '%(i+1), np.shape(self.fullData[i]))
         self.picamLib.Picam_DestroyRois(rois)
         self.newestFrame = np.zeros([roiRows, roiCols])
+
+    #hard code the metadata you want, then parse through all options to set dictionary
+    def SetupMetaData(self):
+        timeStampsMask = {0:'None', 1:'Start', 2:'Stop', 3:'Both'}
+        gateTrackMask = {0: 'None', 1:'Delay', 2:'Width', 3:'Both'}
+        #set frame tracking
+        self.picamLib.Picam_SetParameterIntegerValue(self.cam, paramTrackFrames, ctypes.c_bool(True))        
+        #set time stamp
+        self.picamLib.Picam_SetParameterIntegerValue(self.cam, paramTimeStamps, ctypes.c_int(3))    
+        self.Commit(printMessage=False)
+        self.GetSizeParameters()
+        #now go through all of them and fill in the member dictionary flags -- for now, ignore gate tracking and modulation tracking.
+        stamp = ctypes.c_int(0)
+        tracking = ctypes.c_bool(False)
+        bDepth = ctypes.c_int(0)
+        #time stamp
+        self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramTimeStamps, ctypes.byref(stamp))
+        if stamp.value > 0:
+            res = ctypes.c_longlong(0)
+            self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramTimeStampBitDepth, ctypes.byref(bDepth))
+            self.picamLib.Picam_GetParameterLargeIntegerValue(self.cam, paramTimeStampResolution, ctypes.byref(res))
+            #self.metaDict = {'TimeStampStart':[False,0,0], 'TimeStampStop':[False,0,0], 'FrameNo':[False,0], 'GateDelay':[False,0,0], 'ModPhase':[False,0]} 
+            if stamp.value==3:
+                self.metaDict['TimeStampStart'] = [True, bDepth.value, res.value]
+                self.metaDict['TimeStampStop'] = [True, bDepth.value, res.value]
+            elif stamp.value == 1:
+                self.metaDict['TimeStampStart'] = [True, bDepth.value, res.value]
+            elif stamp.value == 2:
+                self.metaDict['TimeStampStop'] = [True, bDepth.value, res.value]
+        #frame tracking
+        self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramTrackFrames, ctypes.byref(tracking))
+        if tracking.value:
+            #get bit depth
+            self.picamLib.Picam_GetParameterIntegerValue(self.cam, paramFrameTrackingBitDepth, ctypes.byref(bDepth))
+            self.metaDict['FrameNo'] = [True, bDepth.value]            
     
     def ReadTemperatureStatus(self,*,printString: bool=True):
         tempStatus = {1: 'Unlocked', 2: 'Locked', 3: 'Faulted'}
@@ -1246,6 +1366,7 @@ class Camera():
             if self.saveDisk:
                 #if saving to disk, just set up 1 dummy array for ROI info while parsing.
                 self.SetupFullData(1)
+                self.SetupMetaData()
                 timeStr = time.strftime('%Y%d%m-%H%M%S',time.gmtime())
                 #filename will have info for ROI 1 -- if multiple ROIs the dims will not apply
                 self.filename = 'data' + timeStr + '-%dx%d-%d-%dbit.raw'%(np.shape(self.fullData[0])[2],np.shape(self.fullData[0])[1],frames,self.bits)
@@ -1290,6 +1411,8 @@ class Camera():
             acqThread.start()    #data processing will be in a different thread than the display
             writeThread = threading.Thread(target=Write, daemon=True, args=(self,))
             writeThread.start()
+            metaThread = threading.Thread(target=WriteMeta, daemon=True, args=(self,))
+            metaThread.start()
             #use launchDisp when running interactively -- in this case the calling thread will not return until acquisition stops.
             if launchDisp:
                 self.DisplayCameraData()
@@ -1350,6 +1473,8 @@ class Camera():
                 cv2.waitKey(10000)
                 cv2.destroyAllWindows()
             case 1:
+                self.newestFrame = np.reshape(self.newestFrame, (self.numRows, self.numCols))
+                DisplayImageMPL(self.newestFrame, self.windowName, self.bits, self.ax, self.fig, self.artist, self.bg)
                 plt.show()      #blocks until display is closed.
             case 3:
                 self.ReturnData()
@@ -1472,6 +1597,7 @@ class Camera():
         if self.saveDisk:
             self.fileHandle.close()
             #print('Disk writing lag: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+            qMeta.join()
             return 'Data saved to %s'%(self.filename)
         else:
             return self.fullData
