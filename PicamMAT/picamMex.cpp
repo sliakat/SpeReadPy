@@ -44,13 +44,16 @@ public:
         }
         TypedArray<int> outputErr = factoryObject.createScalar<int>(*(errPtr));
         outputs[0] = outputErr;
+    	WriteString("Outputs[0] succeeded.");
         
         int regionLength = rows_*cols_;
         if (regionLength > 0)
         {
+	    WriteString("Inside region loop");
             //TypedArray<pi16u> outputData = factoryObject.createArray<pi16u>({1, imageData16_.size()},imageData16_.data(),imageData16_.data()+imageData16_.size());
             TypedArray<pi16u> outputData = factoryObject.createArray<pi16u>({(pi16u)rows_,(pi16u)cols_},imageData16_.data(),imageData16_.data()+imageData16_.size());
             outputs[1] = outputData;
+	    WriteString("Outputs[1] succeeded.");
         }        
     }
     void InitAndOpen(int* errPtr)
