@@ -49,12 +49,22 @@ public:
         int regionLength = rows_*cols_;
         if (regionLength > 0)
         {
-	    WriteString("Inside region loop");
+            char temp[128];
+            _snprintf_s(temp, 128, "Inside Region Loop, length: %d", regionLength);
+            WriteString(temp);
             //TypedArray<pi16u> outputData = factoryObject.createArray<pi16u>({1, imageData16_.size()},imageData16_.data(),imageData16_.data()+imageData16_.size());
             TypedArray<pi16u> outputData = factoryObject.createArray<pi16u>({(pi16u)rows_,(pi16u)cols_},imageData16_.data(),imageData16_.data()+imageData16_.size());
             outputs[1] = outputData;
-	    WriteString("Outputs[1] succeeded.");
-        }        
+            WriteString("Outputs[1] succeeded.");
+        }
+        else
+        {
+            char temp[128];
+            _snprintf_s(temp, 128, "Region Length %d, failed check. Outputting 0.", regionLength);
+            WriteString(temp);
+            TypedArray<int> failedOutput = factoryObject.createScalar<int>(0);
+            outputs[1] = failedOutput;
+        }
     }
     void InitAndOpen(int* errPtr)
     {
@@ -65,13 +75,16 @@ public:
         Picam_GetCameraID(*camera_,id_);
         WriteString("Got ID.");
         Picam_GetParameterFloatingPointValue(*camera_, PicamParameter_ReadoutRateCalculation, &readRate_);
-        WriteString("Got Read Rate.");
+        char temp[128];
+        _snprintf_s(temp, 128, "Read Rate: %0.3f", readRate_);
+        WriteString(temp);
         *(errPtr) = err;
     }
     void AcquireSingle(int *errPtr)
     {        
         PicamAvailableData data;
         PicamAcquisitionErrorsMask errors;
+        char temp[128];
         //give acquire a timeout of 2x readout rate, or 3 secs, whichever is larger
         //having a timeout error returned can give the user a means to "reset" in the main app
         double expectedFrameTime = (1 / readRate_);
@@ -82,10 +95,10 @@ public:
         }
         WriteString("Before Acquire.");
         int err = Picam_Acquire(*camera_, 1, timeout_, &data, &errors);
-        WriteString("After Acquire.");
-        *(errPtr) = err;
-        
-        if (err == 0)
+        WriteString("After Acquire.");        
+        _snprintf_s(temp, 128, "\tPicamError %d\n\tErrorsMask %d\n", err, errors);
+        WriteString(temp);
+        if ((err == 0) && (errors == 0))
         {
             GetXandY();
             WriteString("Got X and Y.");
@@ -98,7 +111,8 @@ public:
             std::vector<pi16u> imageData16(framePtr, framePtr + (readCount * (readoutStride_ / 2)));
             WriteString("Created vector.");
 			imageData16_ = imageData16;
-        }        
+        }
+        *(errPtr) = err;
     }
     
     //this is the cleanup
@@ -157,6 +171,7 @@ private:
     FILE* pFile_;
     char string_[128];
     bool debug_;
+    int error_;
     
     //writes only if debug_ is set to True
     void WriteString(char* src)
