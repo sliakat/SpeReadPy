@@ -20,9 +20,9 @@ public:
         cols_ = 0;
         id_ = new PicamCameraID;
         camera_ = new PicamHandle;
+        error_ = 0;
     }
     void operator()(ArgumentList outputs, ArgumentList inputs){
-        int* errPtr;
         ArrayFactory factoryObject;
         const int inputInt = inputs[0][0];
         debug_ = false;
@@ -33,16 +33,16 @@ public:
         }
         WriteString("Read input");
         switch(inputInt){
-            case 0: InitAndOpen(errPtr);
+            case 0: InitAndOpen();
                     break;
-            case 1: AcquireSingle(errPtr);
+            case 1: AcquireSingle();
                     break;
-            case 2: CloseAndExit(errPtr);
+            case 2: CloseAndExit();
                     break;
-            default: CloseAndExit(errPtr);
+            default: CloseAndExit();
                     break;
         }
-        TypedArray<int> outputErr = factoryObject.createScalar<int>(*(errPtr));
+        TypedArray<int> outputErr = factoryObject.createScalar<int>(error_);
         outputs[0] = outputErr;
     	WriteString("Outputs[0] succeeded.");
         
@@ -66,11 +66,11 @@ public:
             outputs[1] = failedOutput;
         }
     }
-    void InitAndOpen(int* errPtr)
+    void InitAndOpen()
     {
         Picam_InitializeLibrary();
         WriteString("Initialized.");
-        int err = Picam_OpenFirstCamera(camera_);
+        error_ = Picam_OpenFirstCamera(camera_);
         WriteString("Opened.");
         Picam_GetCameraID(*camera_,id_);
         WriteString("Got ID.");
@@ -78,9 +78,8 @@ public:
         char temp[128];
         _snprintf_s(temp, 128, "Read Rate: %0.3f", readRate_);
         WriteString(temp);
-        *(errPtr) = err;
     }
-    void AcquireSingle(int *errPtr)
+    void AcquireSingle()
     {        
         PicamAvailableData data;
         PicamAcquisitionErrorsMask errors;
@@ -94,11 +93,11 @@ public:
             timeout_ = 3000;
         }
         WriteString("Before Acquire.");
-        int err = Picam_Acquire(*camera_, 1, timeout_, &data, &errors);
+        error_ = Picam_Acquire(*camera_, 1, timeout_, &data, &errors);
         WriteString("After Acquire.");        
-        _snprintf_s(temp, 128, "\tPicamError %d\n\tErrorsMask %d\n", err, errors);
+        _snprintf_s(temp, 128, "\tPicamError %d\n\tErrorsMask %d\n", error_, errors);
         WriteString(temp);
-        if ((err == 0) && (errors == 0))
+        if ((error_ == 0) && (errors == 0))
         {
             GetXandY();
             WriteString("Got X and Y.");
@@ -112,11 +111,10 @@ public:
             WriteString("Created vector.");
 			imageData16_ = imageData16;
         }
-        *(errPtr) = err;
     }
     
     //this is the cleanup
-    void CloseAndExit(int* errPtr)
+    void CloseAndExit()
     {
         //stop any running acquisition --> close camera --> uninitialize PICam
         pibln cameraRunning = false;
@@ -132,16 +130,14 @@ public:
                 cameraRunning = status.running;
 			}
 		}
-        int err = Picam_CloseCamera(*camera_);
+        error_ = Picam_CloseCamera(*camera_);
         Picam_UninitializeLibrary();
         delete id_;
         delete camera_;
-        *(errPtr) = err;
     }
     //destructor to close the camera and uninitialize PICam if something happens to the MATLAB connection.
     ~MexFunction(){
-        int* errPtr;
-        CloseAndExit(errPtr);
+        CloseAndExit();
     }
     void GetXandY()
     {
