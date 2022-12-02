@@ -523,13 +523,16 @@ class Camera():
     
     #test function to generate n ROIs of full width and 10+ rows that start from the top of the camera.
     def SetROIs(self, n):
-        if self.numRows >= ((n*10) + n):
+        #if self.numRows >= ((n*10) + n):
+        if self.numRows >= (n*10):
             roiArray = ctypes.ARRAY(roiStruct, n)()
             lastPos = 0
             for i in range(0,n):
-                roi = roiStruct(0, self.numCols, 1, lastPos, 10+i, 1)
+                #roi = roiStruct(0, self.numCols, 1, lastPos, 10+i, 1)
+                roi = roiStruct(0, self.numCols, 1, lastPos, 10, 1)
                 roiArray[i] = roi
-                lastPos += 10+i
+                #lastPos += 10+i
+                lastPos += 10
             rois = roisStruct(ctypes.addressof(roiArray[0]), n)
             #print(rois)
             self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, ctypes.byref(rois))
@@ -1170,7 +1173,7 @@ class Camera():
 
     #function to process 16-bit data
     def ProcessData(self, data, readStride,*,saveData: bool=True):
-        print(data.readout_count, 'readouts in callback.')        
+        print(data.readout_count, 'readout(s) in callback.')        
         start = time.perf_counter_ns()
         x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_byte))#size of full readout        
         if data.readout_count > 0:
@@ -1182,7 +1185,7 @@ class Camera():
                 roiRows = np.shape(self.fullData[k])[1]         
                 readCounter = 0
                 readStrideOffset = 0
-                for j in range(0,data.readout_count):       #readout by readout                               
+                for j in range(0,data.readout_count):       #readout by readout                             
                     for i in range(0,np.uint64(self.framesPerRead.value)):    #frame by frame
                         #start = time.perf_counter_ns()
                         #offsetA = np.int64((i * readStride) / 2) + roiOffset
@@ -1213,7 +1216,7 @@ class Camera():
                 
             with lock:
                 self.counter += data.readout_count
-        #print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+        print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
         if data.readout_count > 0:
             qTimes.put([((time.perf_counter_ns() - start)/1e6)/data.readout_count])
         #time.sleep(0.150) #-- debug only -- this is to force multiple readouts in a callback
@@ -1279,7 +1282,7 @@ class Camera():
             self.fullData[i] = np.zeros([frames, roiRows, roiCols])
             print('ROI %d shape: '%(i+1), np.shape(self.fullData[i]))
         self.picamLib.Picam_DestroyRois(rois)
-        self.newestFrame = np.zeros([roiRows, roiCols])
+        #self.newestFrame = np.zeros([roiRows, roiCols])
 
     #hard code the metadata you want, then parse through all options to set dictionary
     def SetupMetaData(self):
@@ -1346,7 +1349,9 @@ class Camera():
         self.picamLib.Picam_SetParameterLargeIntegerValue(self.cam,paramFrames,frameCount)
         #0 is for infinite preview, don't allow for -s mode
         if self.Commit() and frameCount.value > 0:
+            self.CommitAndChange()
             self.counter = 0
+            self.newestFrame = np.array([])
             #set up total data objects
             #self.totalData = np.zeros((frameCount.value,self.numRows,self.numCols))
             if self.saveDisk:
@@ -1475,6 +1480,7 @@ class Camera():
         self.picamLib.Picam_SetParameterLargeIntegerValue(self.dev,paramFrames,frameCount)    #setting with dev handle commits to physical device if successful
         if self.Commit() and frameCount.value >= 0:
             self.CommitAndChange()
+            self.newestFrame = np.array([])
             if self.display:
                 match self.dispType:
                     case 0:                        
