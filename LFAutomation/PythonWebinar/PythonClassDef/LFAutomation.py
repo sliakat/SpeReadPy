@@ -12,7 +12,7 @@ import sys
 import os
 import glob
 import numpy as np
-from System import String, IntPtr, Int64
+from System import String, IntPtr, Int64, Double
 from System.IO import FileAccess
 from System.Collections.Generic import List
 from System.Runtime.InteropServices import Marshal
@@ -228,3 +228,49 @@ class AutoClassNiche(AutoClass):    #these are for niche functions or used for d
                 self.fileManager.CloseFile(imgSetTemp)
                 counter += 1        
         self.fileManager.CloseFile(combinedData)
+
+    #characteristic EMCCD curve per EMVA 1288 - fig 5.
+    #do gains manually b/c light source will need to be adjusted for each gain
+    #write line by line to a csv
+    def EMCCDCharCurve(self, minExp: int, maxExp: int, fileName: str):
+        exposures = np.linspace(minExp, maxExp, num=50)
+        exposures = np.round(exposures, 2)
+        qe = 0.9
+        filePath = '%s%s'%('C:\\Users\\sliakat\\OneDrive - Teledyne Technologies Inc\\InterestingFilesToShare\\ForHarish\\EMCCDChar\\',fileName)
+
+        #first take middle exposure and get analog gain figure
+        self.experiment.SetValue(CameraSettings.ShutterTimingExposureTime, Double(0.00))
+        darkDataSet = self.experiment.Capture(3)
+        [darkData, id] = self.DataToNumpy(darkDataSet) 
+        darkMean = np.mean(np.float64(darkData[0][1:3,412:612,412:612].flatten()))
+        self.experiment.SetValue(CameraSettings.ShutterTimingExposureTime, Double(exposures[int(np.floor(len(exposures) / 2))]))
+        #print(exposures[int(np.floor(len(exposures) / 2))])
+        illumDataSet = self.experiment.Capture(3)
+        [illumData, id] = self.DataToNumpy(illumDataSet)            
+        illumMean = np.mean(np.float64(illumData[0][1:3,412:612,412:612].flatten()))
+        variance = np.var(np.float64(illumData[0][2,412:612,412:612].flatten()) - np.float64(illumData[0][1,412:612,412:612].flatten())) / 2
+        signal = illumMean - darkMean
+        analogGain = signal / variance  #e-/ct
+        photonMid = (signal * analogGain) / qe    #photons / pixel
+
+        with open(filePath, 'w', encoding='utf-8') as f:
+            for elem in exposures:
+                #darks at 0 exp
+                self.experiment.SetValue(CameraSettings.ShutterTimingExposureTime, Double(0.00))
+                darkDataSet = self.experiment.Capture(3)
+                [darkData, id] = self.DataToNumpy(darkDataSet) 
+                darkMean = np.mean(np.float64(darkData[0][1:3,412:612,412:612].flatten()))
+                #darkMean = np.mean(np.float64(darkData[0][2,:,:]) - np.float64(darkData[0][1,:,:]))[:]
+                #illuminated
+                self.experiment.SetValue(CameraSettings.ShutterTimingExposureTime, Double(elem))
+                illumDataSet = self.experiment.Capture(3)
+                [illumData, id] = self.DataToNumpy(illumDataSet)            
+                illumMean = np.mean(np.float64(illumData[0][1:3,412:612,412:612].flatten()))
+                #stats
+                noise = np.std(np.float64(illumData[0][2,412:612,412:612].flatten()) - np.float64(illumData[0][1,412:612,412:612].flatten())) / np.sqrt(2)
+                variance = np.var(np.float64(illumData[0][2,412:612,412:612].flatten()) - np.float64(illumData[0][1,412:612,412:612].flatten())) / 2
+                signal = illumMean - darkMean
+                photons = photonMid * (elem / exposures[int(np.floor(len(exposures) / 2))])
+                snr = signal / noise
+                f.write('%0.5f, %0.5f, %0.5f, %0.3f\n'%(photons, signal, snr, analogGain))
+
