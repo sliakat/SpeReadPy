@@ -28,6 +28,7 @@ clr.AddReference('PrincetonInstruments.LightField.AutomationV5')
 clr.AddReference('PrincetonInstruments.LightFieldAddInSupportServices')
 
 # PI imports
+import PrincetonInstruments.LightField.AddIns as AddIns
 from PrincetonInstruments.LightField.Automation import Automation
 from PrincetonInstruments.LightField.AddIns import CameraSettings
 from PrincetonInstruments.LightField.AddIns import ExperimentSettings
@@ -121,7 +122,19 @@ class AutoClass:
         imageCols = imgSetTemp.GetRow(0,0,0).GetData().Length
         imageFormat = imgSetTemp.GetFrame(0,0).Format
         self.fileManager.CloseFile(imgSetTemp)
-        return imageRows, imageCols, imageFormat        
+        return imageRows, imageCols, imageFormat      
+
+    def OnlineExportCSV(self):
+        #first enable csv export
+        self.experiment.SetValue(ExperimentSettings.OnlineExportEnabled,True)
+        self.experiment.SetValue(ExperimentSettings.OnlineExportFormat, AddIns.ExportFileType.Csv)
+        #now use specific csv settings
+        self.experiment.SetValue(ExperimentSettings.OnlineExportCsvFormatOptionsDataLayout, AddIns.CsvLayout.Table)
+        tableFormat = List[AddIns.CsvTableFormat]()
+        tableFormat.Add(AddIns.CsvTableFormat.Wavelength)
+        tableFormat.Add(AddIns.CsvTableFormat.Intensity)
+        self.experiment.SetValue(ExperimentSettings.OnlineExportCsvFormatOptionsTableColumns, tableFormat)
+        
             
     def Capture(self,*,numFrames: int=1,reset: bool=False):   #for debugging automation errors
         if self.experiment.IsReadyToRun:
