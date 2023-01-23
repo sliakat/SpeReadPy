@@ -42,8 +42,9 @@ def validate_camera():
     camera = None
     
     # Find connected device
+
     for device in _experiment.ExperimentDevices:
-        if (device.Type == DeviceType.Camera & _experiment.IsReadyToRun):
+        if (device.Type == DeviceType.Camera and _experiment.IsReadyToRun):
             camera = device
 
     if (camera == None):
@@ -130,6 +131,7 @@ def numpy_statistics(image_data, image_frame):
     print("\nMin Value: %s" % str(np.min(array)))
     
 
+_experiment.Load('PM1')
 
 # Validate camera state
 if (validate_camera()):
@@ -141,17 +143,17 @@ if (validate_camera()):
     frames = 1
 
     # Set number of frames
-    _experiment.SetValue(ExperimentSettings.AcquisitionFramesToStore, frames)
+    _experiment.SetValue(ExperimentSettings.AcquisitionFramesToStore, Int32(frames))
     
     for i in range(images):
         # Capture 1 Frame
-        dataset = _experiment.Capture(frames)
+        dataset = _experiment.Capture(Int32(frames))
 
         # Stop processing if we do not have all frames
         if (dataset.Frames != frames):
-            
+            print(dataset.Frames, frames, type(dataset.Frames))
             # Clean up the image data set                    
-            dataset.Dispose();
+            dataset.Dispose()
 
             raise Exception("Frames are not equal.")
 
