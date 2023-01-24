@@ -11,3 +11,4 @@ spe = SpeReference(file)
 data = spe.GetData(rois=[], frames=[])
 for item in data:
     PlotNumpy(item,file)
+print(spe.GetWavelengths()[0])

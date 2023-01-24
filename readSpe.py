@@ -255,3 +255,25 @@ class SpeReference():
                     regionData[j,:] = np.reshape(tmp,[self.roiList[rois[i]].height,self.roiList[rois[i]].width])
                 dataList.append(regionData)
         return dataList
+
+    def GetWavelengths(self,*,rois:list=[]):
+        if len(self.wavelength) == 0:
+            return []
+        else:
+            if len(rois) == 0:
+                rois = np.arange(0,len(self.roiList))
+            try:
+                for item in rois:
+                    if item < 0 or item >= len(self.roiList):
+                        raise ValueError('ROI value outside of allowed ranged (%d through %d)'%(0, len(self.roiList)-1))
+            except TypeError:
+                raise TypeError('ROI input needs to be iterable')
+
+            wavelengthList = []
+            for item in rois:
+                if self.roiList[item].width > 0:
+                    wlIndex = np.arange(self.roiList[item].X,self.roiList[item].X+self.roiList[item].width,self.roiList[item].xbin,dtype=np.int32)
+                    wavelengthList.append(self.wavelength[wlIndex])
+                else:
+                    wavelengthList.append(self.wavelength)
+            return wavelengthList
