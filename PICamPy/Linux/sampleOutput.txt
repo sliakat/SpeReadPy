@@ -1,6 +1,6 @@
 ***************************************
 Test script sample use (in terminal):
-python3 -m picam-opencv 0 -p -exp 0 -speed 20 -roi 400
+python3 -m picam-CLtest 0 -p -exp 0 -speed 20 -roi 400
 
 Sample output:
 PICam Initialized: True
