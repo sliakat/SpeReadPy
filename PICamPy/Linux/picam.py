@@ -1173,7 +1173,7 @@ class Camera():
 
     #function to process 16-bit data
     def ProcessData(self, data, readStride,*,saveData: bool=True):
-        print(data.readout_count, 'readout(s) in callback.')        
+        #print(data.readout_count, 'readout(s) in callback.')        
         start = time.perf_counter_ns()
         x=ctypes.cast(data.initial_readout,ctypes.POINTER(ctypes.c_byte))#size of full readout        
         if data.readout_count > 0:
@@ -1216,7 +1216,7 @@ class Camera():
                 
             with lock:
                 self.counter += data.readout_count
-        print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
+        #print('Total process time: %0.2f ms'%((time.perf_counter_ns() - start)/1e6))
         if data.readout_count > 0:
             qTimes.put([((time.perf_counter_ns() - start)/1e6)/data.readout_count])
         #time.sleep(0.150) #-- debug only -- this is to force multiple readouts in a callback
