@@ -166,8 +166,6 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
                 sat = np.argwhere(data==2**bits-1)
                 if len(wave) > 10 and pixAxis==False:
                     ax.scatter(wave[sat[:,1]],sat[:,0],color='red',s=10)
-                    q1 = sat[:,1]
-                    q2 = sat[:,0]
                 else:
                     ax.scatter(sat[:,1],sat[:,0],color='red',s=10)
     axName = '%s, Frame %d'%(name,frame)
@@ -225,7 +223,6 @@ def parseSpe(filename,*,suppress: bool=True):
     if len(wavelengths) > 2:        
         if startX > -1 and width > 0:
             wavelengths = wavelengths[startX:(startX+width)]
-            print(wavelengths)
     print('%d ROIs in this spe file, showing ROI %d'%(len(dataList),region+1))
     return (data, xmlFooter, wavelengths)
 
