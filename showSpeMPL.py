@@ -19,6 +19,7 @@ from scipy import interpolate
 from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 import signal
+import threading
 
 #generic container class for the various objects used in this script
 class Container:
@@ -53,6 +54,10 @@ class Region:
         self.height_ = height
         self.xBin_ = xBin
         self.yBin_ = yBin
+
+class PlotObject():
+    def __init__(self):
+        pass
 
 #helper function to get pixel coords if wavelength cal is on x-axis
 def findXPixels(wl,x1,x2):
@@ -153,10 +158,18 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
         if bg==False:
             if np.min(data) <= 0:
                 zeros = np.argwhere(data==0)
-                ax.scatter(zeros[:,1],zeros[:,0],color='yellow',s=10)
+                if len(wave) > 10 and pixAxis==False:
+                    ax.scatter(wave[zeros[:,1]],wave[zeros[:,0]],color='yellow',s=10)
+                else:
+                    ax.scatter(zeros[:,1],zeros[:,0],color='yellow',s=10)
             if np.max(data) == 2**bits-1:
                 sat = np.argwhere(data==2**bits-1)
-                ax.scatter(sat[:,1],sat[:,0],color='red',s=10)
+                if len(wave) > 10 and pixAxis==False:
+                    ax.scatter(wave[sat[:,1]],sat[:,0],color='red',s=10)
+                    q1 = sat[:,1]
+                    q2 = sat[:,0]
+                else:
+                    ax.scatter(sat[:,1],sat[:,0],color='red',s=10)
     axName = '%s, Frame %d'%(name,frame)
     ax.set_title(axName, fontsize=fontTitle)
     for label in (ax.get_xticklabels() + ax.get_yticklabels()):
@@ -212,6 +225,7 @@ def parseSpe(filename,*,suppress: bool=True):
     if len(wavelengths) > 2:        
         if startX > -1 and width > 0:
             wavelengths = wavelengths[startX:(startX+width)]
+            print(wavelengths)
     print('%d ROIs in this spe file, showing ROI %d'%(len(dataList),region+1))
     return (data, xmlFooter, wavelengths)
 
@@ -579,7 +593,24 @@ def PrintSelectedXmlEntries(xmlStr):
     print('')
     print('Viewing Region:\t\t%d x %d, xBin %d, yBin %d\n\tFull ROI Info: [%d, %d, %d, %d, %d, %d]'%(rgn.ogWidth_,rgn.ogHeight_,rgn.xBin_,rgn.yBin_,
                                                                                                            rgn.startX_,rgn.startY_,rgn.width_,rgn.height_,rgn.xBin_,rgn.yBin_))
-    
+
+def PlotFunction(i, nameSplit, currFrame, pixelAxis):
+    axTotal.Add(figTotal.Get(i).add_subplot(111))              
+    MPSliderTotal.Add(SliderGen(axTotal.Get(i),framesMax))
+    MPSliderTotal.Get(i).label.set_size(fontLabels)        
+    plotData(dataTotal.Get(i)[0,:,:],axTotal.Get(i),wlTotal.Get(i),nameSplit,currFrame,pixAxis=pixelAxis)        
+    #register slider to callback
+    MPSliderConnect.Add(MPSliderTotal.Get(i).on_changed((lambda val: update_frame(val,dataTotal.Get(i),figTotal.Get(i),axTotal.Get(i),wlTotal.Get(i),nameSplit))))
+    #rectangle / span selectors
+    if np.size(dataTotal.Get(i),1)>1:
+        RSTotal.Add(RectSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))
+    else:
+        SSTotal.Add(SpanSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))
+
+def StopPrompt():
+    print('Press Enter to end script')
+    input()
+
 if __name__=="__main__":  
     warnings.filterwarnings("ignore")
     #these objects append to keep data in scope in case they are needed w/ interactive console, labeling them *Total to distinguish    
@@ -594,6 +625,7 @@ if __name__=="__main__":
     MPSliderTotal = Container()
     MPSliderConnect = Container()
     rgn = Region()
+    threads = []
     
     #globals
     pixelAxis = False
@@ -617,7 +649,8 @@ if __name__=="__main__":
     
     for i in range(len(filenames)): #originally intended to open multiple files in one kernel, but slider doesn't seem to connect to multiple figs.
                                     #for comparison of multiple images, open each in separate kernel
-        nameSplit = (filenames[i].rsplit('/',maxsplit=1)[1]).rsplit(r'.',maxsplit=1)[0]     #'/' for tk, '\\' for System.Windows.Forms        
+        nameSplit = (filenames[i].rsplit('/',maxsplit=1)[1]).rsplit(r'.',maxsplit=1)[0]     #'/' for tk, '\\' for System.Windows.Forms   
+        print('Information for %s:'%(nameSplit))     
         figTotal.Add(plt.figure(nameSplit))
         d,x,w = parseSpe(filenames[i])
         #append lists
@@ -630,17 +663,5 @@ if __name__=="__main__":
             pass
         PrintSelectedXmlEntries(xmlTotal.Get(i))
         wlTotal.Add(w)
-        axTotal.Add(figTotal.Get(i).add_subplot(111))              
-        MPSliderTotal.Add(SliderGen(axTotal.Get(i),framesMax))
-        MPSliderTotal.Get(i).label.set_size(fontLabels)        
-        plotData(dataTotal.Get(i)[0,:,:],axTotal.Get(i),wlTotal.Get(i),nameSplit,currFrame,pixAxis=pixelAxis)        
-        #register slider to callback
-        MPSliderConnect.Add(MPSliderTotal.Get(i).on_changed((lambda val: update_frame(val,dataTotal.Get(i),figTotal.Get(i),axTotal.Get(i),wlTotal.Get(i),nameSplit))))
-        #rectangle / span selectors
-        if np.size(dataTotal.Get(i),1)>1:
-            RSTotal.Add(RectSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))
-        else:
-            SSTotal.Add(SpanSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))        
-    
-    print('Press Enter to end script')
-    input()
+        PlotFunction(i, nameSplit, currFrame, pixelAxis)
+    StopPrompt()
