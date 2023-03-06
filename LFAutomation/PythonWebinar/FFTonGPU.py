@@ -267,4 +267,5 @@ if __name__=="__main__":
     ##press run in LF instance at some point now to kick off the processing / display##
     
     # ShowImage(img.ReturnImage())        #call this from console to see the latest transformed image
-    # LF.CloseInstance()        #run this when finished to unhook event and dispose AddInProcess
+    input('Press Enter to Exit')
+    LF.CloseInstance()        #run this when finished to unhook event and dispose AddInProcess

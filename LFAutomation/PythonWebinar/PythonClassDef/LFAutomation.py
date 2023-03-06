@@ -71,14 +71,17 @@ class AutoClass:
     
     def SetBaseFilename(self, name:str):
         self.experiment.SetValue(ExperimentSettings.FileNameGenerationBaseFileName, name)                        
-        
-    def NewInstance(self,*,expName: str=''):      #design is to contain LFA class objects within the wrapper class, not give outside access
-        self.auto = Automation(True, List[String]())
+    
+    def NewInstance(self,*,expPath: str='')->None:
+        '''
+        Create new automation instance. Pass in path to desired .lfe file to
+        e.g. NewInstance(expPath="C:\\Users\\<username>\\Documents\\LightField\\Experiments\\<name>.lfe")
+        '''
+        clArgs = List[String]()
+        clArgs.Add(expPath)
+        self.auto = Automation(True, clArgs)
         self.experiment = self.auto.LightFieldApplication.Experiment
         self.fileManager = self.auto.LightFieldApplication.FileManager
-        if len(expName) > 0:
-            self.experiment.Load(expName)
-        #self.experiment.ExperimentCompleted += self.acquire_complete
         
     def GetCurrentROIs(self):
         self.ROIs = np.array([],dtype=np.uint32)
