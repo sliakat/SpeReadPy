@@ -74,7 +74,7 @@ class AutoClass:
     
     def NewInstance(self,*,expPath: str='')->None:
         '''
-        Create new automation instance. Pass in path to desired .lfe file to
+        Create new automation instance. Pass in path to desired .lfe file to load that experiment on startup.
         e.g. NewInstance(expPath="C:\\Users\\<username>\\Documents\\LightField\\Experiments\\<name>.lfe")
         '''
         clArgs = List[String]()
