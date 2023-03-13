@@ -3,11 +3,13 @@
 Created on Sat Dec  5 23:46:02 2020
 
 @author: sabbi
-"""
 
-#input file name to the function, data will be output into dataContainer object,
-#which will have xml fopoter and wavelength calibration if applicable
-#dataContainer.data will be a list of numpy arrays per ROI
+usage of SpeReference class:
+- import: from readSpe import SpeReference
+- create reference to data with construction of class: img_reference = SpeReference(spe_file)
+- when data is needed, call GetData: image = self.img_reference.GetData(frames=[idx], rois=[])[0][0]
+----- that will get frame #idx in the first region into a numpy array
+"""
 
 import numpy as np
 import xml.etree.ElementTree as ET
@@ -35,7 +37,10 @@ class dataContainer:
         self.__dict__.update(kwargs)
 
 
-
+#old function that puts entire data block in memory
+#input file name to the function, data will be output into dataContainer object,
+#which will have xml fopoter and wavelength calibration if applicable
+#dataContainer.data will be a list of numpy arrays per ROI
 def readSpe(filePath):
     dataTypes = {'MonochromeUnsigned16':np.uint16, 'MonochromeUnsigned32':np.uint32, 'MonochromeFloating32':np.float32}
     
@@ -139,17 +144,23 @@ def readSpe(filePath):
             totalData=dataContainer(dataList)
             return totalData
 
+#right now works with spe3 only
 class SpeReference():
     dataTypes = {'MonochromeUnsigned16':np.uint16, 'MonochromeUnsigned32':np.uint32, 'MonochromeFloating32':np.float32}
     def __init__(self, filePath: str):
         self.filePath = filePath
+        #self.filename = (self.filePath.rsplit('\\',maxsplit=1)[1]).rsplit(r'.',maxsplit=1)[0]
+        #self.filedir = self.filePath.rsplit('\\',maxsplit=1)[0]
+        #self.fileext = (self.filePath.rsplit('\\',maxsplit=1)[1]).rsplit(r'.',maxsplit=1)[1]        
         self.speVersion = 0
         self.roiList = []
         self.readoutStride = 0
         self.numFrames = 0
         self.pixelFormat = None
-        self.wavelength = None
+        self.wavelength = []
+        self.sensorDims = None
         self.metaList = []
+        self.xmlFooter = ''
         self.InitializeSpe()
 
     def InitializeSpe(self):
@@ -162,14 +173,14 @@ class SpeReference():
             #get ROIs and shapes
             if self.speVersion==3:
                 f.seek(self.xmlLoc)
-                xmlFooter = f.read()
-                xmlRoot = ET.fromstring(xmlFooter)
+                self.xmlFooter = f.read()
+                xmlRoot = ET.fromstring(self.xmlFooter)
                 for child in xmlRoot:
                     if 'DataFormat'.casefold() in child.tag.casefold():
                         for child1 in child:                    
                             if 'DataBlock'.casefold() in child1.tag.casefold():
-                                self.readoutStride=np.int64(child1.get('stride'))
-                                self.numFrames=np.int64(child1.get('count'))
+                                self.readoutStride=np.uint64(child1.get('stride'))
+                                self.numFrames=np.uint64(child1.get('count'))
                                 self.pixelFormat=child1.get('pixelFormat')
                                 for child2 in child1:
                                     if 'DataBlock'.casefold() in child1.tag.casefold():
@@ -201,20 +212,24 @@ class SpeReference():
                                             wavelengths = np.append(wavelengths,np.fromstring(elem,sep=',')[0])
                                         self.wavelength = wavelengths
                                     else:
-                                        self.wavelength = np.fromstring(child2.text,sep=',')       
+                                        self.wavelength = np.fromstring(child2.text,sep=',')
+                            if 'SensorInformation'.casefold() in child1.tag.casefold():
+                                width = np.uint32(child1.get('width'))
+                                height = np.uint32(child1.get('height'))
+                                self.sensorDims= ROI(width, height, 0)
                             if 'SensorMapping'.casefold() in child1.tag.casefold():                                
                                 if counter < len(self.roiList):
-                                    self.roiList[counter].X = np.int32(child1.get('x'))
-                                    self.roiList[counter].Y = np.int32(child1.get('y'))
-                                    ogWidth = np.int32(child1.get('width'))
-                                    ogHeight = np.int32(child1.get('height'))
-                                    self.roiList[counter].xbin = np.int32(child1.get('xBinning'))
-                                    self.roiList[counter].ybin = np.int32(child1.get('yBinning'))
-                                    self.roiList[counter].width = np.int32(ogWidth / self.roiList[counter].xbin)
-                                    self.roiList[counter].height = np.int32(ogHeight / self.roiList[counter].ybin)
+                                    self.roiList[counter].X = np.uint64(child1.get('x'))
+                                    self.roiList[counter].Y = np.uint64(child1.get('y'))
+                                    ogWidth = np.uint64(child1.get('width'))
+                                    ogHeight = np.uint64(child1.get('height'))
+                                    self.roiList[counter].xbin = np.uint64(child1.get('xBinning'))
+                                    self.roiList[counter].ybin = np.uint64(child1.get('yBinning'))
+                                    self.roiList[counter].width = np.uint64(ogWidth / self.roiList[counter].xbin)
+                                    self.roiList[counter].height = np.uint64(ogHeight / self.roiList[counter].ybin)
                                     counter += 1
                                 else:
-                                    break
+                                    break        
     
     def GetData(self,*,rois:list=[], frames:list=[]):
         #if no inputs, or empty list, set to all
@@ -246,16 +261,15 @@ class SpeReference():
                 regionOffset = 0                
                 if rois[i]>0:
                     for ii in range(0,rois[i]):
-                        regionOffset += np.int32(self.roiList[ii].stride/bpp)                    
+                        regionOffset += np.uint64(self.roiList[ii].stride/bpp)                    
                 for j in range(0,len(frames)):
                     f.seek(0)                    
-                    frameOffset = np.int32(frames[j]*self.readoutStride/bpp)
-                    readCount =  np.int64(self.roiList[rois[i]].stride/bpp)
-                    tmp = np.fromfile(f,dtype=self.dataTypes[self.pixelFormat],count=readCount,offset=np.int64(4100+(regionOffset*bpp)+(frameOffset*bpp)))
+                    frameOffset = np.uint64(frames[j]*self.readoutStride/bpp)
+                    readCount =  np.uint64(self.roiList[rois[i]].stride/bpp)
+                    tmp = np.fromfile(f,dtype=self.dataTypes[self.pixelFormat],count=readCount,offset=np.uint64(4100+(regionOffset*bpp)+(frameOffset*bpp)))
                     regionData[j,:] = np.reshape(tmp,[self.roiList[rois[i]].height,self.roiList[rois[i]].width])
                 dataList.append(regionData)
         return dataList
-
     def GetWavelengths(self,*,rois:list=[]):
         if len(self.wavelength) == 0:
             return []
@@ -268,7 +282,8 @@ class SpeReference():
                         raise ValueError('ROI value outside of allowed ranged (%d through %d)'%(0, len(self.roiList)-1))
             except TypeError:
                 raise TypeError('ROI input needs to be iterable')
-
+            
+            ##if len(self.wavelength) == self.sensorDims.width:
             wavelengthList = []
             for item in rois:
                 if self.roiList[item].width > 0:
@@ -277,3 +292,53 @@ class SpeReference():
                 else:
                     wavelengthList.append(self.wavelength)
             return wavelengthList
+            ##else:
+                ##raise ValueError('Wavelength calibration was not performed with full ROI.')
+    def GetCameraSettings(self) -> dict:
+        '''
+        Return a dictionary of useful camera settings
+        Work in progress
+        Current keys: exposure, analog_gain, adc_speed, sensor_temperature
+        '''
+        settings_dictionary = {
+            'exposure': None,
+            'analog_gain': None,
+            'adc_speed': None,
+            'sensor_temperature': None
+        }
+        xmlRoot = ET.fromstring(self.xmlFooter)
+        for child in xmlRoot:
+            if 'DataHistories'.casefold() in child.tag.casefold():
+                for child1 in child:
+                    if 'DataHistory'.casefold() in child1.tag.casefold():
+                        for child2 in child1:
+                            if 'Origin'.casefold() in child2.tag.casefold():
+                                for child3 in child2:
+                                    if 'Experiment'.casefold() in child3.tag.casefold():
+                                        for child4 in child3:                                            
+                                            if 'Devices'.casefold() in child4.tag.casefold():
+                                                for child2 in child4:
+                                                    if 'Cameras'.casefold() in child2.tag.casefold():
+                                                        for child3 in child2:
+                                                            if 'Camera'.casefold() in child3.tag.casefold():
+                                                                for child4 in child3:
+                                                                    if 'ShutterTiming'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'ExposureTime'.casefold() in child5.tag.casefold():
+                                                                                settings_dictionary['exposure'] = np.float64(child5.text)
+                                                                    if 'Adc'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'Speed'.casefold() in child5.tag.casefold():
+                                                                                if child5.get('relevance') != 'False':
+                                                                                    settings_dictionary['adc_speed']=np.float64(child5.text)
+                                                                            if 'AnalogGain'.casefold() in child5.tag.casefold():
+                                                                                if child5.get('relevance') != 'False':
+                                                                                    settings_dictionary['analog_gain']=child5.text
+                                                                    if 'Sensor'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'Temperature'.casefold() in child5.tag.casefold():
+                                                                                for child6 in child5:
+                                                                                    if 'Reading'.casefold() in child6.tag.casefold():
+                                                                                        settings_dictionary['sensor_temperature']=np.float64(child6.text)
+        return settings_dictionary
+    
