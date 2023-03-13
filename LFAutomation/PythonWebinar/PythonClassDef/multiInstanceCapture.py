@@ -27,7 +27,7 @@ class AutomationObjectManager():
         self.Stop = False
         for name in instanceNames:
             self.objectList.append(ac())
-            self.objectList[-1].NewInstance(expName=name)
+            self.objectList[-1].NewInstance(expPath=name)
     def __len__(self):
         return len(self.objectList)
     def __getitem__(self, idx):
@@ -88,7 +88,7 @@ def InputToStop(eventAcq:bool):
 
 if __name__=="__main__":
     #replace my experiment names with experiments you are trying to run
-    instances = AutomationObjectManager(['PM1', 'PM2', 'PM3', 'PM4'])
+    instances = AutomationObjectManager(['C:\\Users\\sliakat\\Documents\\LightField\\Experiments\\PM1.lfe', 'C:\\Users\\sliakat\\Documents\\LightField\\Experiments\\PM2.lfe'])
     stopThread = threading.Thread(target=InputToStop, daemon=False, args=(True,))    
     stopThread.start()
     instances.StreamAllWithEvent()
