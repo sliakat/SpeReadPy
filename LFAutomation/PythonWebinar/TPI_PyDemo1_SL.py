@@ -19,8 +19,8 @@ from System.IO import *
 
 from System.Threading import AutoResetEvent
 
-# Import c compatible List and String
-from System import String
+# Import c compatible types
+from System import String, Int32, Double
 from System.Collections.Generic import List
 
 # Add needed dll references
@@ -43,8 +43,8 @@ def experiment_completed(sender, event_args):
     
 def InitializeFilenameParams():
     experiment.SetValue(ExperimentSettings.FileNameGenerationAttachIncrement,True)
-    experiment.SetValue(ExperimentSettings.FileNameGenerationIncrementNumber,1)
-    experiment.SetValue(ExperimentSettings.FileNameGenerationIncrementMinimumDigits,2)
+    experiment.SetValue(ExperimentSettings.FileNameGenerationIncrementNumber,Int32(1))
+    experiment.SetValue(ExperimentSettings.FileNameGenerationIncrementMinimumDigits,Int32(2))
     experiment.SetValue(ExperimentSettings.FileNameGenerationAttachDate,False)
     experiment.SetValue(ExperimentSettings.FileNameGenerationAttachTime,False)
     
@@ -64,7 +64,7 @@ acquireCompleted = AutoResetEvent(False)
 
 experiment.Load("TPIPyDemo1")
 experiment.ExperimentCompleted += experiment_completed
-experiment.SetValue(SpectrometerSettings.GratingSelected,'[500nm,1200][1][0]')
+experiment.SetValue(SpectrometerSettings.GratingSelected,'[500nm,600][1][0]')
 InitializeFilenameParams()
 
 exposures = [50,100]
@@ -73,8 +73,8 @@ baseFilename = "TPI.PyDemoI."
 
 for i in range(0,len(specPositions)):
     for j in range(0,len(exposures)):
-        experiment.SetValue(SpectrometerSettings.GratingCenterWavelength, specPositions[i])
-        experiment.SetValue(CameraSettings.ShutterTimingExposureTime, exposures[j])
+        experiment.SetValue(SpectrometerSettings.GratingCenterWavelength, Double(specPositions[i]))
+        experiment.SetValue(CameraSettings.ShutterTimingExposureTime, Double(exposures[j]))
         AcquireAndLock(baseFilename)
 
-#auto.Dispose()
+auto.Dispose()

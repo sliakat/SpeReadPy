@@ -14,7 +14,7 @@ import clr
 import sys
 import os
 import numpy as np
-from System import String
+from System import String, Int32, Int64, Double
 from System.Collections.Generic import List
 from System.Runtime.InteropServices import GCHandle, GCHandleType
 import ctypes
@@ -34,6 +34,7 @@ from PrincetonInstruments.LightField.AddIns import ExperimentSettings
 from PrincetonInstruments.LightField.AddIns import RegionOfInterest
 from PrincetonInstruments.LightField.AddIns import Pulse 
 from PrincetonInstruments.LightField.AddIns import ImageDataFormat
+from PrincetonInstruments.LightField.AddIns import FrameCombinationMethod
 
 quality = {1:'LowNoise', 2:'HighCap', 3:'EM', 4:'HighSpd'}
 gain = {1:'Low', 2:'Med', 3:'High'}
@@ -104,21 +105,21 @@ def WriteFile(string):
 def GetAnalogGain():
     global scaleExp, startExposure, gatedCamera
     #discard first frame
-    experiment.SetValue(ExperimentSettings.AcquisitionFramesToInitiallyDiscard, 1)
+    experiment.SetValue(ExperimentSettings.AcquisitionFramesToInitiallyDiscard, Int64(1))
     #bias w/ 0-expose (avg of 5 dark frames)
-    experiment.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationFramesCombined, 5)
-    experiment.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationMethod, 2) #1 = sum, 2 = avg
+    experiment.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationFramesCombined, Int64(5))
+    experiment.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationMethod, FrameCombinationMethod.Average) #1 = sum, 2 = avg
     if gatedCamera:
         #gated camera bias -- turn intensifier off, set gate to 3ns        
          experiment.SetValue(CameraSettings.IntensifierEnabled,False)
          startDelay =  experiment.GetValue(CameraSettings.GatingRepetitiveGate).Delay
-         bgPulse = Pulse(3, startDelay)     
+         bgPulse = Pulse(Double(3), Double(startDelay))     
          experiment.SetValue(CameraSettings.GatingRepetitiveGate, bgPulse)      
     else:
         experiment.SetValue(CameraSettings.ShutterTimingExposureTime, experiment.GetCurrentRange(CameraSettings.ShutterTimingExposureTime).Minimum) #min exposure for camera
     bias = DataToNumpy(experiment.Capture(1), 1)
     #3 exposed frames, frame 1 to get mean illumination, frames 2-3 to get variance
-    experiment.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationFramesCombined, 1)
+    experiment.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationFramesCombined, Int64(1))
     if scaleExp:    
         expUsed = ScaleExposure()
     else:
@@ -126,11 +127,11 @@ def GetAnalogGain():
     if gatedCamera:
         experiment.SetValue(CameraSettings.IntensifierEnabled,True)
         startDelay =  experiment.GetValue(CameraSettings.GatingRepetitiveGate).Delay
-        expPulse = Pulse(expUsed, startDelay)
+        expPulse = Pulse(Double(expUsed), Double(startDelay))
         experiment.SetValue(CameraSettings.GatingRepetitiveGate, expPulse)
         print('\tGate width used: %4.2f ns.'%(expUsed))
     else:
-        experiment.SetValue(CameraSettings.ShutterTimingExposureTime, expUsed)
+        experiment.SetValue(CameraSettings.ShutterTimingExposureTime, Double(expUsed))
         print('\tExposure used: %4.2f ms.'%(expUsed))
     illuminated = np.float32(DataToNumpy(experiment.Capture(3), 3))
     #calculation
@@ -161,7 +162,7 @@ def InitializeCycle():
     #force one port
     if experiment.Exists(CameraSettings.ReadoutControlPortsUsed):
         if not experiment.IsReadOnly(CameraSettings.ReadoutControlPortsUsed):
-            experiment.SetValue(CameraSettings.ReadoutControlPortsUsed, 1)
+            experiment.SetValue(CameraSettings.ReadoutControlPortsUsed, Int32(1))
     #get starting exposure time as a basis
     if experiment.Exists(CameraSettings.ShutterTimingExposureTime):
         startExposure = experiment.GetValue(CameraSettings.ShutterTimingExposureTime)

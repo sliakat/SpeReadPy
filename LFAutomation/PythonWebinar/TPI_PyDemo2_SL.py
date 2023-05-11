@@ -21,8 +21,8 @@ from System.Runtime.InteropServices import GCHandle, GCHandleType
 
 from System.Threading import AutoResetEvent
 
-# Import c compatible List and String
-from System import String
+# Import c compatible types
+from System import String, Int32, Int64, Double
 from System.Collections.Generic import List
 
 # Add needed dll references
@@ -98,8 +98,8 @@ def experiment_completed(sender, event_args):
     
 def InitializeFilenameParams():
     experiment.SetValue(ExperimentSettings.FileNameGenerationAttachIncrement,True)
-    experiment.SetValue(ExperimentSettings.FileNameGenerationIncrementNumber,1)
-    experiment.SetValue(ExperimentSettings.FileNameGenerationIncrementMinimumDigits,2)
+    experiment.SetValue(ExperimentSettings.FileNameGenerationIncrementNumber,Int32(1))
+    experiment.SetValue(ExperimentSettings.FileNameGenerationIncrementMinimumDigits,Int32(2))
     experiment.SetValue(ExperimentSettings.FileNameGenerationAttachDate,False)
     experiment.SetValue(ExperimentSettings.FileNameGenerationAttachTime,True)
     
@@ -138,7 +138,7 @@ experiment.ExperimentCompleted += experiment_completed
 InitializeFilenameParams()
 i=0
 
-ser=serial.Serial('COM5',baudrate=9600,parity=serial.PARITY_NONE,bytesize=serial.EIGHTBITS,stopbits=serial.STOPBITS_ONE)
+ser=serial.Serial('COM13',baudrate=9600,parity=serial.PARITY_NONE,bytesize=serial.EIGHTBITS,stopbits=serial.STOPBITS_ONE)
 ser.timeout = 10
 clearSer(ser)
 
@@ -151,8 +151,8 @@ ser.write('522 goto'.encode()+ b'\x0d')
 WaitForSerial(ser)
 #after these steps, the spectrometer grating will be in position to being the demo.
 
-experiment.SetValue(CameraSettings.ShutterTimingExposureTime, 100)
-experiment.SetValue(ExperimentSettings.AcquisitionFramesToStore, 20)
+experiment.SetValue(CameraSettings.ShutterTimingExposureTime, Double(100))
+experiment.SetValue(ExperimentSettings.AcquisitionFramesToStore, Int64(20))
 width = experiment.GetValue(CameraSettings.SensorInformationActiveAreaWidth)
 height = experiment.GetValue(CameraSettings.SensorInformationActiveAreaHeight)
 
@@ -160,5 +160,5 @@ baseFilename = "TPI.PyDemoII."
 AcquireMoveAndLock(baseFilename,ser)
 
 
-#auto.Dispose()
-#ser.close()
+auto.Dispose()
+ser.close()

@@ -36,8 +36,8 @@ import os
 
 from System.Threading import AutoResetEvent
 
-# Import c compatible List and String
-from System import String
+# Import c compatible types
+from System import String, Int32, Int64, Double
 from System.Collections.Generic import List
 
 # Add needed dll references
@@ -77,9 +77,9 @@ def Background(expName):
     exp.SetValue(ExperimentSettings.OnlineCorrectionsBackgroundCorrectionEnabled,False) #unchecks BG correction box
     accums = exp.GetValue(ExperimentSettings.OnlineProcessingFrameCombinationFramesCombined)
     if accums < 5:
-        exp.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationFramesCombined,5)
+        exp.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationFramesCombined,Int64(5))
     exp.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationMethod, AddIns.FrameCombinationMethod.Average)
-    exp.SetValue(ExperimentSettings.AcquisitionFramesToStore,1)                     #takes 1 frame for BG
+    exp.SetValue(ExperimentSettings.AcquisitionFramesToStore,Int64(1))                     #takes 1 frame for BG
     SetFilenames('Background')
     bgPath = exp.GetValue(ExperimentSettings.FileNameGenerationDirectory) + '\\Background.spe'
     Acquire()
@@ -89,9 +89,9 @@ def Background(expName):
 def Reference(expName,background,numAccums):
     exp.SetValue(ExperimentSettings.OnlineCorrectionsBackgroundCorrectionEnabled,True) #auto BG correction enabled
     exp.SetValue(ExperimentSettings.OnlineCorrectionsBackgroundCorrectionReferenceFile,background)
-    exp.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationFramesCombined,numAccums)
+    exp.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationFramesCombined,Int64(numAccums))
     exp.SetValue(ExperimentSettings.OnlineProcessingFrameCombinationMethod, AddIns.FrameCombinationMethod.Average)
-    exp.SetValue(ExperimentSettings.AcquisitionFramesToStore,1)
+    exp.SetValue(ExperimentSettings.AcquisitionFramesToStore,Int64(1))
     SetFilenames('Reference')
     refPath = exp.GetValue(ExperimentSettings.FileNameGenerationDirectory) + '\\Reference.spe'
     Acquire()
