@@ -284,7 +284,7 @@ def StatsLinePlot(xmin, xmax, axis, wl):
 #matplotlib widget for box selection
 def RectSelect(axis, wl, name):
     return RectangleSelector(axis, lambda eclick, erelease: box_select_callback(eclick, erelease, axis, wl, name),
-                                       drawtype='box', useblit=True,
+                                       useblit=True,
                                        button=[1, 3],  # disable middle button
                                        minspanx=10, minspany=10,
                                        spancoords='pixels',

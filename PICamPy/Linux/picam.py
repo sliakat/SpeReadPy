@@ -29,6 +29,7 @@ def calcParam(v,c,n):
 
 #check picam.h for parameter definitions -- maybe turn this into a dictionary so I don't need to use GetEnumString
 paramFrames = ctypes.c_int(calcParam(6,2,40))    #PicamParameter_ReadoutCount
+'''PicamParameter_ReadoutCount'''
 paramStride = ctypes.c_int(calcParam(1,1,45))    #PicamParameter_ReadoutStride
 paramFrameSize = ctypes.c_int(calcParam(1,1,42))
 paramFrameStride = ctypes.c_int(calcParam(1,1,43))
@@ -519,10 +520,12 @@ class Camera():
                 self.dispType = 1
                 matplotlib.use('TkAgg')
         if self.numRows <= 1 and self.dispType == 0:
-            self.display = False       #opencv can't handle line plots, so don't plot single row data if using opencv
+            self.display = False       #opencv can't handle line plots, so don't plot single row data if using opencv    
     
-    #test function to generate n ROIs of full width and 10+ rows that start from the top of the camera.
     def SetROIs(self, n):
+        """
+        test function to generate n ROIs of full width and 10+ rows that start from the top of the camera.
+        """
         #if self.numRows >= ((n*10) + n):
         if self.numRows >= (n*10):
             roiArray = ctypes.ARRAY(roiStruct, n)()
@@ -553,6 +556,52 @@ class Camera():
             self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, ctypes.byref(rois))
             self.GetFirstROI()   #call this to reset the numRows and numCols for display
             self.Commit()
+    
+    def ReplaceROI(self, x: int, y: int, width: int, height: int, xbin: int, ybin: int) -> bool:
+        """
+        Replace existing ROI with the desired ROI. Single ROI only!
+        Use 1 ReplaceROI call followed by subsequent AppendROI calls to chain together custom ROIs.
+        """
+        newROI = roiStruct(x, width, xbin, y, height, ybin)
+        rois = roisStruct(ctypes.addressof(newROI), 1)
+        setROIsError = self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, ctypes.byref(rois))
+        if setROIsError > 0:
+            print('ROIs set error: %s'%(self.EnumString(1, setROIsError)))
+            return False
+        else:
+            print('ROI set successfully.')
+        self.GetFirstROI()   #call this to reset the numRows and numCols for display
+        self.Commit()
+    
+    def AppendROI(self, x: int, y: int, width: int, height: int, xbin: int, ybin: int) -> bool:
+        """
+        Attempt to append an ROI to the existing ROI array -- return True if successful
+        Ideal use is after a ReplaceROI call.
+        """
+        #get current ROIs
+        oldRois = ctypes.c_void_p(0)        
+        self.picamLib.Picam_GetParameterRoisValue(self.cam, paramROIs, ctypes.byref(oldRois))
+        oldRoisCast = ctypes.cast(oldRois,ctypes.POINTER(roisStruct))[0]
+        existingROINum = oldRoisCast.roi_count
+        newROINum = int(existingROINum + 1)
+        oldROIArray = oldRoisCast.roi_array
+        #allocate for new "+1" ROI array        
+        newROIArray = ctypes.ARRAY(roiStruct, newROINum)()
+        #fill in existing info to the new array
+        ctypes.memmove(ctypes.addressof(newROIArray[0]), oldROIArray, int(ctypes.sizeof(roiStruct)*existingROINum))
+        #add new ROI
+        newROIArray[-1] = roiStruct(x, width, xbin, y, height, ybin)
+        newROIs = roisStruct(ctypes.addressof(newROIArray), newROINum)
+        self.picamLib.Picam_DestroyRois(oldRois)
+        setROIsError = self.picamLib.Picam_SetParameterRoisValue(self.cam, paramROIs, ctypes.byref(newROIs))
+        if setROIsError > 0:
+            print('ROIs set error: %s'%(self.EnumString(1, setROIsError)))
+            return False
+        else:
+            print('ROI append successful.')
+        self.GetFirstROI()   #call this to reset the numRows and numCols for display
+        self.Commit()
+
 
     def SetFastestShiftRate(self):
         ##first set to fastest shift rate -- 2 = required constraint
@@ -1157,7 +1206,7 @@ class Camera():
         exist = self.CheckExistenceAndRelevance(paramAdcGain)
         if exist == 0:
             try:
-                self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramAdcSpeed,ctypes.c_int(gain))
+                self.picamLib.Picam_SetParameterIntegerValue(self.cam,paramAdcGain,ctypes.c_int(gain))
             except TypeError:
                 return
             finally:

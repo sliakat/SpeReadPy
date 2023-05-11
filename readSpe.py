@@ -102,14 +102,14 @@ def readSpe(filePath):
             #read entire datablock
             f.seek(0)
             bpp = np.dtype(dataTypes[pixFormat]).itemsize
-            numPixels = np.int((xmlLoc-4100)/bpp)  
+            numPixels = np.int32((xmlLoc-4100)/bpp)  
             totalBlock = np.fromfile(f,dtype=dataTypes[pixFormat],count=numPixels,offset=4100)
             for i in range(0,len(regionList)):
                 offLen=list()                
                 if i>0:
                     regionOffset += (regionList[i-1].stride)/bpp                    
                 for j in range(0,numFrames):
-                    offLen.append((np.int(regionOffset+(j*readoutStride/bpp)),regionList[i].width*regionList[i].height))     
+                    offLen.append((np.int32(regionOffset+(j*readoutStride/bpp)),regionList[i].width*regionList[i].height))     
                 regionData = np.concatenate([totalBlock[offset:offset+length] for offset,length in offLen])
                 dataList.append(np.reshape(regionData,(numFrames,regionList[i].height,regionList[i].width),order='C'))
                 
@@ -126,9 +126,9 @@ def readSpe(filePath):
             f.seek(108)
             datatype=np.fromfile(f,dtype=np.int16,count=1)[0]
             f.seek(42)
-            frameWidth=np.int(np.fromfile(f,dtype=np.uint16,count=1)[0])
+            frameWidth=np.int16(np.fromfile(f,dtype=np.uint16,count=1)[0])
             f.seek(656)
-            frameHeight=np.int(np.fromfile(f,dtype=np.uint16,count=1)[0])
+            frameHeight=np.int16(np.fromfile(f,dtype=np.uint16,count=1)[0])
             f.seek(1446)
             numFrames=np.fromfile(f,dtype=np.int32,count=1)[0]
             numPixels = frameWidth*frameHeight*numFrames
@@ -138,7 +138,7 @@ def readSpe(filePath):
             totalBlock = np.fromfile(f,dtype=dataTypes2[datatype],count=numPixels,offset=4100)
             offLen=list()
             for j in range(0,numFrames):
-                offLen.append((np.int((j*frameWidth*frameHeight)),frameWidth*frameHeight))
+                offLen.append((np.int32((j*frameWidth*frameHeight)),frameWidth*frameHeight))
             regionData = np.concatenate([totalBlock[offset:offset+length] for offset,length in offLen])
             dataList.append(np.reshape(regionData,(numFrames,frameHeight,frameWidth),order='C'))
             totalData=dataContainer(dataList)
