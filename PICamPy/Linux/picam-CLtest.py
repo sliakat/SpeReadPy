@@ -5,6 +5,7 @@ import picam
 import numpy as np
 from matplotlib import pyplot as plt
 import argparse
+import sys
 
 def ParseArgs():
     global frameCount, preview, exposure, roiSet, centerROIDim, saveDisk, speed, binRows
@@ -56,11 +57,10 @@ if __name__ == "__main__":
     binRows = 0
     ParseArgs()         #parse any input args
     
-    #For Linux / Windows lines, comment out the one you are not using
-    #Linux
-    cam = picam.Camera(dispType=1)
-    #Windows
-    #cam = picam.Camera(libPath = 'C:\\Program Files\\Common Files\\Princeton Instruments\\Picam\\Runtime\\Picam.dll',dispType=1)
+    if sys.platform == 'linux':
+        cam = picam.Camera(dispType=1)
+    elif sys.platform == 'win32':
+        cam = picam.Camera(libPath = 'C:\\Program Files\\Common Files\\Princeton Instruments\\Picam\\Runtime\\Picam.dll',dispType=1)
     if cam.OpenCamera():
         cam.SetExposure(exposure)     #exposure time in ms
         if speed == 0:
