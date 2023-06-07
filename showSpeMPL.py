@@ -5,11 +5,10 @@ Created on Wed Feb  9 16:03:10 2022
 @author: sliakat
 """
 
-from readSpe import readSpe
+from readSpe import SpeReference
 import numpy as np
 import tkinter as tk
 from tkinter import filedialog
-from tkinter import simpledialog
 from matplotlib import pyplot as plt
 from matplotlib.widgets import RectangleSelector, SpanSelector, Slider
 import xml.etree.ElementTree as ET
@@ -17,47 +16,233 @@ import xml.dom.minidom as dom
 import warnings
 from scipy import interpolate
 from matplotlib import cm
-from matplotlib.colors import ListedColormap, LinearSegmentedColormap
-import signal
-import threading
+from matplotlib.colors import ListedColormap
+from typing import Any
 
-#generic container class for the various objects used in this script
-class Container:
-    def __init__(self):
-        self._content = list()
-    def Add(self, val):
-        self._content.append(val)
-    def Get(self,index: int=-1):
-        if index < 0:
-            raise ValueError("index cannot be < 0")
+class Region():
+    def __init__(self, x: int=-1, y: int=-1, og_width: int=0, og_height: int=0, width: int=0, height:int=0, x_bin: int=0, y_bin: int=0) -> None:
+        self._x = x
+        self._y = y
+        self._og_width = og_width
+        self._og_height = og_height
+        self._width = width
+        self._height = height
+        self._x_bin = x_bin
+        self._y_bin = y_bin
+    @property
+    def x(self) -> int:
+        return self._x
+    @x.setter
+    def x(self, val):
+        self._x = val
+    @property
+    def y(self) -> int:
+        return self._y
+    @y.setter
+    def y(self, val):
+        self._y = val
+    @property
+    def og_width(self) -> int:
+        return self._og_width
+    @og_width.setter
+    def og_width(self, val):
+        self._og_width = val
+    @property
+    def og_height(self) -> int:
+        return self._og_height
+    @og_height.setter
+    def og_height(self, val):
+        self._og_height = val
+    @property
+    def width(self) -> int:
+        return self._width
+    @width.setter
+    def width(self, val):
+        self._width = val
+    @property
+    def height(self) -> int:
+        return self._height
+    @height.setter
+    def height(self, val):
+        self._height = val
+    @property
+    def x_bin(self) -> int:
+        return self._x_bin
+    @x_bin.setter
+    def x_bin(self, val):
+        self._x_bin = val
+    @property
+    def y_bin(self) -> int:
+        return self._y_bin
+    @y_bin.setter
+    def y_bin(self, val):
+        self._y_bin = val
+
+class Rectangle():
+    def __init__(self, x_left: int=-1, x_right: int=-1, y_top: int=-1, y_bottom: int=-1) -> None:
+        self._x_left = x_left
+        self._x_right = x_right
+        self._y_top = y_top
+        self._y_bottom = y_bottom
+    @property
+    def x_left(self) -> int:
+        return self._x_left
+    @x_left.setter
+    def x_left(self, val: int):
+        self._x_left = val
+    @property
+    def x_right(self) -> int:
+        return self._x_right
+    @x_right.setter
+    def x_right(self, val: int):
+        self._x_right = val
+    @property
+    def y_top(self) -> int:
+        return self._y_top
+    @y_top.setter
+    def y_top(self, val: int):
+        self._y_top = val
+    @property
+    def y_bottom(self) -> int:
+        return self._y_bottom
+    @y_bottom.setter
+    def y_bottom(self, val: int):
+        self._y_bottom = val
+    
+class SpeState():
+    def __init__(self,spe_file_path:str) -> None:
+        self._spe_file = SpeReference(spe_file_path)
+        self._num_regions = len(self.spe_file.roiList)
+        self.region_list = []
+        for i in range(0, self.num_regions):
+            self.region_list.append(RegionImageState(i))
+            self.region_list[i].region.x = self.spe_file.roiList[i].X
+            self.region_list[i].region.y = self.spe_file.roiList[i].Y
+            self.region_list[i].region.width = self.spe_file.roiList[i].width
+            self.region_list[i].region.height = self.spe_file.roiList[i].height
+            self.region_list[i].region.x_bin = self.spe_file.roiList[i].xbin
+            self.region_list[i].region.y_bin = self.spe_file.roiList[i].ybin
+    @property
+    def spe_file(self)->SpeReference:
+        return(self._spe_file)
+    @property
+    def num_regions(self)->int:
+        return(self._num_regions)
+
+class RegionImageState():
+    def __init__(self, roi_index: int) -> None:
+        self._roi_index = roi_index
+        self._current_frame = 1
+        self._fig = None
+        self._ax = None
+        self._rectangle_select = None
+        self._span_select = None
+        self._slider = None
+        self._slider_connect = None
+        self._pixel_axis = False
+        self._autocontrast = True
+        self._selection_rectangle = Rectangle()
+        self._region_wavelengths = None
+        self._region = Region()
+    @property
+    def roi_index(self)->int:
+        return(self._roi_index)
+    @property
+    def current_frame(self)->int:
+        return(self._current_frame)
+    @current_frame.setter
+    def current_frame(self, val: int):
+        self._current_frame = val
+    @property
+    def fig(self) -> Any:
+        return(self._fig)
+    @fig.setter
+    def fig(self, val):
+        self._fig = val
+    @property
+    def ax(self) -> Any:
+        return(self._ax)
+    @ax.setter
+    def ax(self, val):
+        self._ax = val
+    @property
+    def rectangle_select(self) -> RectangleSelector:
+        return(self._rectangle_select)
+    @rectangle_select.setter
+    def rectangle_select(self, val):
+        self._rectangle_select = val
+    @property
+    def span_select(self) -> SpanSelector:
+        return (self._span_select)
+    @span_select.setter
+    def span_select(self, val):
+        self._span_select = val
+    @property
+    def slider(self) -> Any:
+        return(self._slider)
+    def generate_mpl_widgets(self, spe_state: SpeState):
+        '''connect to matplotlibs callback from object state'''
+        #slider
+        self._slider = SliderGen(self.ax, spe_state.spe_file.numFrames)
+        self.slider.label.set_size(fontLabels)
+        self.slider_connect = self.slider.on_changed((lambda val: update_frame(val, spe_state, self)))
+
+        if self.region.height > 1:
+            #rectangle selection
+            self.rectangle_select = RectSelect(spe_state, self)
+        elif self.region.height == 1:
+            self.span_select = SpanSelect(spe_state, self)
         else:
-            return self._content[index]
-    def Reset(self):
-        self._content = list()
-        
-class Region:
-    def __init__(self):
-        self.startX_ = 0
-        self.startY_ = 0
-        self.ogWidth_ = 0
-        self.ogHeight_ = 0
-        self.width_ = 0
-        self.height_ = 0
-        self.xBin_ = 0
-        self.yBin_ = 0
-    def Set(self,x,y,ogWidth,ogHeight,width,height,xBin,yBin):
-        self.startX_ = x
-        self.staryY_ = y
-        self.ogWidth_ = ogWidth
-        self.ogHeight_ = ogHeight
-        self.width_ = width
-        self.height_ = height
-        self.xBin_ = xBin
-        self.yBin_ = yBin
+            raise RuntimeError('Region height needs to be >= 1 row.')
 
-class PlotObject():
-    def __init__(self):
-        pass
+    @property
+    def slider_connect(self) -> Any:
+        return(self._slider_connect)
+    @slider_connect.setter
+    def slider_connect(self, val):
+        self._slider_connect = val
+    @property
+    def pixel_axis(self) -> bool:
+        return self._pixel_axis
+    @pixel_axis.setter
+    def pixel_axis(self, val: bool):
+        self._pixel_axis = val
+    @property
+    def autocontrast(self) -> bool:
+        return self._autocontrast
+    @autocontrast.setter
+    def autocontrast(self, val):
+        self._autocontrast = val
+    @property
+    def selection_rectangle(self) -> Rectangle:
+        return self._selection_rectangle
+    def update_selection_rectangle(self, x_left: int, x_right: int, y_top: int, y_bottom: int):
+        self._selection_rectangle.x_left = x_left
+        self._selection_rectangle.x_right = x_right
+        self._selection_rectangle.y_top = y_top
+        self._selection_rectangle.y_bottom = y_bottom
+    @property
+    def region_wavelengths(self) -> np.ndarray | None:
+        return self._region_wavelengths
+    @region_wavelengths.setter
+    def region_wavelengths(self, val):
+        self._region_wavelengths = val
+        if len(self.region_wavelengths) > 0:
+            self._region_wavelengths = self._region_wavelengths[0]
+    @property
+    def region(self) -> Region:
+        return self._region
+    @region.setter
+    def region(self, x: int, y: int, og_width: int, og_height: int, width: int, height: int, x_bin: int, y_bin: int):
+        self._region.x = x
+        self._region.y = y
+        self._region.og_width = og_width
+        self._region.og_height = og_height
+        self._region.width = width
+        self._region.height = height
+        self._region.x_bin = x_bin
+        self._region.y_bin = y_bin
+    
 
 #helper function to get pixel coords if wavelength cal is on x-axis
 def findXPixels(wl,x1,x2):
@@ -78,12 +263,13 @@ def GenCustomCmap(data, bits: int=16):  #take gray cmap, make yellow if 0, red i
     newMap = ListedColormap(newColors)
     return newMap
     
-#callback for scale
-def update_frame(val,data,fig,ax,wave,name):    #pass in full data
-    global pixelAxis, currFrame
-    fig.canvas.draw_idle()
-    currFrame = int(val)
-    plotData(data[currFrame-1,:,:],ax,wave,name,currFrame,pixAxis=pixelAxis)
+#callback for slider
+def update_frame(val, spe_state: SpeState, region: RegionImageState):
+    region.fig.canvas.draw_idle()
+    region.current_frame = int(val) - 1
+    data = spe_state.spe_file.GetData(frames=[region.current_frame], rois=[region.roi_index])[0][0]
+    if region.autocontrast:
+        plotData(data,region.ax, region.region_wavelengths, '%s, ROI %02d'%(spe_state_objects[i].spe_file.file_name, region.roi_index+1),int(val),pixAxis=region.pixel_axis,xBound1=region.selection_rectangle.x_left,xBound2=region.selection_rectangle.x_right,yBound1=region.selection_rectangle.y_top,yBound2=region.selection_rectangle.y_bottom)
     
 #helper to get FWHM of a line section
 def FWHM(data):  #pass in a line (1D array)
@@ -174,58 +360,6 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
         label.set_fontsize(fontLabels)
     plt.show()
 
-def ParseXmlForRegion(xmlStr, region):
-    startX = -1
-    width = -1
-    if len(xmlStr)>50:
-        xmlRoot = ET.fromstring(xmlStr)
-        #find DataHistories
-        for child in xmlRoot:
-            if 'Calibrations'.casefold() in child.tag.casefold():
-                counter = 0
-                for child1 in child:                    
-                    if 'SensorMapping'.casefold() in child1.tag.casefold():
-                        if counter == region:
-                            startX = np.int32(child1.get('x'))
-                            startY = np.int32(child1.get('y'))
-                            ogWidth = np.int32(child1.get('width'))
-                            ogHeight = np.int32(child1.get('height'))
-                            xbin = np.int32(child1.get('xBinning'))
-                            ybin = np.int32(child1.get('yBinning'))
-                            width = np.int32(ogWidth / xbin)
-                            height = np.int32(ogHeight / ybin)
-                            rgn.Set(startX, startY, ogWidth, ogHeight, width, height, xbin, ybin)
-                            break
-                        else:
-                            counter += 1
-    return startX, width
-       
-#gets data out of spe file
-def parseSpe(filename,*,suppress: bool=True):
-    region = 0    
-    totalData = readSpe(filename)
-    wavelengths=[0]
-    xmlFooter = 'xml footer does not exist for spe2.0 files' 
-    try:
-        xmlFooter = totalData.xmlFooter        
-        wavelengths = totalData.wavelengths        
-    except:
-        if not suppress:
-            print('No wavelength calibration in spe.')            
-    dataList = totalData.data
-    if len(dataList) > 1:
-        region = simpledialog.askinteger('Pick Region', 'Pick ROI:\n0-%d'%(len(dataList)-1))
-    if region >= len(dataList) or region < 0:
-        print('Invalid ROI entered, showing ROI #1')
-        region = 0
-    data = dataList[region]
-    startX, width = ParseXmlForRegion(xmlFooter,region)
-    if len(wavelengths) > 2:        
-        if startX > -1 and width > 0:
-            wavelengths = wavelengths[startX:(startX+width)]
-    print('%d ROIs in this spe file, showing ROI %d'%(len(dataList),region+1))
-    return (data, xmlFooter, wavelengths)
-
 #display helpers
 def WriteStats(axis, string):
     global fontStats
@@ -244,46 +378,41 @@ def GetStats(data, x1, x2, y1, y2):
     return regMean,regDev,regMin,regMax
     
 #callback for box selection
-def box_select_callback(eclick, erelease, axis, wl, name):
-    global pixelAxis, autoContrast, currFrame
+def box_select_callback(eclick, erelease, spe_state: SpeState, region: RegionImageState):
     x1, y1 = int(np.floor(eclick.xdata)), int(np.floor(eclick.ydata))
     x2, y2 = int(np.floor(erelease.xdata)), int(np.floor(erelease.ydata))
-    if not pixelAxis and len(wl) > 10:
-        x1, x2 = findXPixels(wl, x1, x2)
-    data = np.array(axis.get_images().pop()._A)
+    if not region.pixel_axis and len(region.region_wavelengths) > 0:
+        x1, x2 = findXPixels(region.region_wavelengths, x1, x2)
+    data = np.array(region.ax.get_images().pop()._A)
     centerRow = np.int32(np.floor(np.shape(data)[0]/2))
     mean, dev, regMin, regMax = GetStats(data,x1,x2,y1,y2)
     fwhm = FWHM(data[centerRow,x1:x2])
     statsString = 'Region Mean: %0.2f          Region Min: %0.2f\nRegion Std: %0.2f          Region Max: %0.2f\nMin/Mean Ratio: %0.3f          FWHM of horizontal slice: %0.3f pix'%(mean,regMin,dev,regMax,(regMin/mean),fwhm)    
-    if autoContrast:
-        plotData(data,axis,wl,name,currFrame,pixAxis=pixelAxis,xBound1=x1,xBound2=x2,yBound1=y1,yBound2=y2)
+    region.update_selection_rectangle(x1, x2, y1, y2)
+    if region.autocontrast:
+        plotData(data,region.ax,region.region_wavelengths,'%s, ROI %02d'%(spe_state.spe_file.file_name, region.roi_index+1),region.current_frame,pixAxis=region.pixel_axis,xBound1=x1,xBound2=x2,yBound1=y1,yBound2=y2)
     else:
-        plotData(data,axis,wl,name,currFrame,pixAxis=pixelAxis)
-    # if x2 > 0 and y2 > 0:
-    #     display_min = int(np.percentile(data[y1:y2,x1:x2].flatten(),5))
-    #     display_max = int(np.percentile(data[y1:y2,x1:x2].flatten(),95))
-    # axis.imshow(data,origin='upper',vmin=display_min,vmax=display_max,cmap='gray')
-    
-    WriteStats(axis, statsString)
+        plotData(data,region.ax,region.region_wavelengths,'%s, ROI %02d'%(spe_state.spe_file.file_name, region.roi_index+1),region.current_frame,pixAxis=region.pixel_axis,xBound1=-1,xBound2=-1,yBound1=-1,yBound2=-1)
+    WriteStats(region.ax, statsString)
     plt.show()
         
 #callback for line selection
-def StatsLinePlot(xmin, xmax, axis, wl):
+def StatsLinePlot(xmin, xmax, spe_state: SpeState, region: RegionImageState):
     #data shape here will be (1, cols)
     #print(np.floor(xmin),np.floor(xmax))
-    if not pixelAxis and len(wl) > 10:
-        xmin, xmax = findXPixels(wl, xmin, xmax)    
-    regionDat = axis.get_lines()[0].get_data()[1][int(np.floor(xmin)):int(np.floor(xmax))]
+    if not region.pixel_axis and len(region.region_wavelengths) > 0:
+        xmin, xmax = findXPixels(region.region_wavelengths, xmin, xmax)    
+    regionDat = region.ax.get_lines()[0].get_data()[1][int(np.floor(xmin)):int(np.floor(xmax))]
     mean = np.mean(regionDat)
     dev = np.std(regionDat)
     fwhm = FWHM(regionDat)
     statsString = 'Region Mean: %0.2f\n Region Std: %0.2f\nFWHM: %0.3f pix'%(mean,dev,fwhm)
-    WriteStats(axis, statsString)
+    WriteStats(region.ax, statsString)
     plt.show()
     
 #matplotlib widget for box selection
-def RectSelect(axis, wl, name):
-    return RectangleSelector(axis, lambda eclick, erelease: box_select_callback(eclick, erelease, axis, wl, name),
+def RectSelect(spe_state: SpeState, region: RegionImageState):
+    return RectangleSelector(region.ax, lambda eclick, erelease: box_select_callback(eclick, erelease, spe_state, region),
                                        useblit=True,
                                        button=[1, 3],  # disable middle button
                                        minspanx=10, minspany=10,
@@ -291,8 +420,8 @@ def RectSelect(axis, wl, name):
                                        interactive=True)
 
 #matplotlib widget for line selection
-def SpanSelect(axis,wl,name):
-    return SpanSelector(axis, lambda xmin, xmax: StatsLinePlot(xmin, xmax, axis, wl), 'horizontal', span_stays=True)
+def SpanSelect(spe_state: SpeState, region: RegionImageState):
+    return SpanSelector(region.ax, lambda xmin, xmax: StatsLinePlot(xmin, xmax, spe_state, region), 'horizontal', interactive=True)
 
 def SliderGen(axis,maximum):
     fp = axis.get_position()        #get position of the figure
@@ -586,23 +715,8 @@ def PrintSelectedXmlEntries(xmlStr):
                                                                             for i in range(0,len(calibrationList)):
                                                                                 print('%s'%(calibrationList[i]),end='')
                                                                                 if i <len(calibrationList)-1:
-                                                                                    print(', ',end='')        
+                                                                                    print(', ',end='')
     print('')
-    print('Viewing Region:\t\t%d x %d, xBin %d, yBin %d\n\tFull ROI Info: [%d, %d, %d, %d, %d, %d]'%(rgn.ogWidth_,rgn.ogHeight_,rgn.xBin_,rgn.yBin_,
-                                                                                                           rgn.startX_,rgn.startY_,rgn.width_,rgn.height_,rgn.xBin_,rgn.yBin_))
-
-def PlotFunction(i, nameSplit, currFrame, pixelAxis):
-    axTotal.Add(figTotal.Get(i).add_subplot(111))              
-    MPSliderTotal.Add(SliderGen(axTotal.Get(i),framesMax))
-    MPSliderTotal.Get(i).label.set_size(fontLabels)        
-    plotData(dataTotal.Get(i)[0,:,:],axTotal.Get(i),wlTotal.Get(i),nameSplit,currFrame,pixAxis=pixelAxis)        
-    #register slider to callback
-    MPSliderConnect.Add(MPSliderTotal.Get(i).on_changed((lambda val: update_frame(val,dataTotal.Get(i),figTotal.Get(i),axTotal.Get(i),wlTotal.Get(i),nameSplit))))
-    #rectangle / span selectors
-    if np.size(dataTotal.Get(i),1)>1:
-        RSTotal.Add(RectSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))
-    else:
-        SSTotal.Add(SpanSelect(axTotal.Get(i),wlTotal.Get(i),nameSplit))
 
 def StopPrompt():
     print('Press Enter to end script')
@@ -610,31 +724,17 @@ def StopPrompt():
 
 if __name__=="__main__":  
     warnings.filterwarnings("ignore")
-    #these objects append to keep data in scope in case they are needed w/ interactive console, labeling them *Total to distinguish    
-    dataTotal = Container()
-    xmlTotal = Container()
-    xmlFormat = list()
-    figTotal = Container()
-    axTotal = Container()
-    wlTotal = Container()
-    RSTotal = Container()
-    SSTotal = Container()
-    MPSliderTotal = Container()
-    MPSliderConnect = Container()
-    rgn = Region()
-    threads = []
     
-    #globals
-    pixelAxis = False
-    autoContrast = True
-    bg = False
-    bits = 16
-    currFrame = 1
-    waitTime = 5   #wait n secs for user input at the end and then end program
     #font sizes (global)
     fontTitle = 36
     fontLabels = 24
     fontStats = 18
+
+    #global
+    spe_state_objects = []
+    pixel_axis = False #if True, then x-axis is displayed as pixel even if calibration exists
+    autocontrast = True
+    bg = False
     
     #use tk for file dialog
     root = tk.Tk()
@@ -646,19 +746,24 @@ if __name__=="__main__":
     
     for i in range(len(filenames)): #originally intended to open multiple files in one kernel, but slider doesn't seem to connect to multiple figs.
                                     #for comparison of multiple images, open each in separate kernel
-        nameSplit = (filenames[i].rsplit('/',maxsplit=1)[1]).rsplit(r'.',maxsplit=1)[0]     #'/' for tk, '\\' for System.Windows.Forms   
-        print('Information for %s:'%(nameSplit))     
-        figTotal.Add(plt.figure(nameSplit))
-        d,x,w = parseSpe(filenames[i])
-        #append lists
-        dataTotal.Add(d)
-        framesMax = np.size(dataTotal.Get(i),axis=0)
-        xmlTotal.Add(x)
+        spe_state_objects.append(SpeState(filenames[i]))
+        print('**Information for %s%s**'%(spe_state_objects[i].spe_file.file_name, spe_state_objects[i].spe_file.file_extension))
+        xmlTotal = spe_state_objects[i].spe_file.xmlFooter
+        xmlFormat = ''
         try:
-            xmlFormat.append(dom.parseString(xmlTotal.Get(i)).toprettyxml())
+            xmlFormat = dom.parseString(xmlTotal).toprettyxml()
+            PrintSelectedXmlEntries(xmlTotal)
+            print('%d region(s):'%(len(spe_state_objects[i].spe_file.roiList)))
         except:
-            pass
-        PrintSelectedXmlEntries(xmlTotal.Get(i))
-        wlTotal.Add(w)
-        PlotFunction(i, nameSplit, currFrame, pixelAxis)
+            print('xml could not be formatted and/ or parsed')
+        for j in range(0,spe_state_objects[i].num_regions):
+            print('\tROI %02d: %d x %d, xbin %d, ybin %d'%(j+1, spe_state_objects[i].region_list[j].region.width, spe_state_objects[i].region_list[j].region.height, spe_state_objects[i].region_list[j].region.x_bin, spe_state_objects[i].region_list[j].region.y_bin))
+            spe_state_objects[i].region_list[j].fig = plt.figure('%s, ROI %02d'%(spe_state_objects[i].spe_file.file_name, j+1))
+            spe_state_objects[i].region_list[j].region_wavelengths = spe_state_objects[i].spe_file.GetWavelengths(rois=[j])
+            spe_state_objects[i].region_list[j].ax = spe_state_objects[i].region_list[j].fig.add_subplot(111)
+            spe_state_objects[i].region_list[j].generate_mpl_widgets(spe_state_objects[i])
+            spe_state_objects[i].region_list[j].pixel_axis = pixel_axis
+            spe_state_objects[i].region_list[j].autocontrast = autocontrast
+            plotData(spe_state_objects[i].spe_file.GetData(frames=[0], rois=[j])[0][0], spe_state_objects[i].region_list[j].ax, spe_state_objects[i].region_list[j].region_wavelengths, '%s, ROI %02d'%(spe_state_objects[i].spe_file.file_name, j+1), pixAxis=pixel_axis)
+        print('\n')
     StopPrompt()
