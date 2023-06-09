@@ -48,7 +48,7 @@ class SpeReference():
         self.filePath = filePath
         (self.file_directory, self.file_name, self.file_extension) = SpeReference.split_file_path(self.filePath)
         self.speVersion = 0
-        self.roiList = []
+        self.roiList: list[ROI] = []
         self.readoutStride = 0
         self.numFrames = 0
         self.pixelFormat = None
@@ -124,32 +124,43 @@ class SpeReference():
                                     self.roiList[counter].height = np.uint64(ogHeight / self.roiList[counter].ybin)
                                     counter += 1
                                 else:
-                                    break        
+                                    break   
+            elif self.speVersion >=2 and self.speVersion <3:
+                f.seek(108)
+                self.pixelFormat=np.fromfile(f,dtype=np.int16,count=1)[0]
+                f.seek(42)
+                frameWidth=np.int32(np.fromfile(f,dtype=np.uint16,count=1)[0])
+                f.seek(656)
+                frameHeight=np.int32(np.fromfile(f,dtype=np.uint16,count=1)[0])
+                f.seek(1446)
+                self.numFrames=np.fromfile(f,dtype=np.int32,count=1)[0]
+                stride = np.int32(frameHeight*frameWidth*np.dtype(self.dataTypes_old_spe[self.pixelFormat]).itemsize)
+                self.roiList.append(ROI(frameWidth,frameHeight,stride))
+            else:
+                raise ValueError('Unrecognized spe file.')
                     
 
     def GetData(self,*,rois:Sequence[int], frames:Sequence[int]):
         dataList = list()
-        if self.speVersion >= 3:
-            #if no inputs, or empty list, set to all
-            if len(rois) == 0:
-                rois = np.arange(0,len(self.roiList))
-            if len(frames) == 0:
-                frames = np.arange(0,self.numFrames)
-            #check for improper values, raise exception if necessary
-            try:
-                for item in rois:
-                    if item < 0 or item >= len(self.roiList):
-                        raise ValueError('ROI value outside of allowed ranged (%d through %d)'%(0, len(self.roiList)-1))
-            except TypeError:
-                raise TypeError('ROI input needs to be iterable')
-            try:
-                for item in frames:
-                    if item < 0 or item >= self.numFrames:
-                        raise ValueError('Frame value outside of allowed ranged (%d through %d)'%(0, self.numFrames-1))
-            except TypeError:
-                raise TypeError('Frame input needs to be iterable')
-
-            #now with that out of the way... get the data
+        #if no inputs, or empty list, set to all
+        if len(rois) == 0:
+            rois = np.arange(0,len(self.roiList))
+        if len(frames) == 0:
+            frames = np.arange(0,self.numFrames)
+        #check for improper values, raise exception if necessary
+        try:
+            for item in rois:
+                if item < 0 or item >= len(self.roiList):
+                    raise ValueError('ROI value outside of allowed ranged (%d through %d)'%(0, len(self.roiList)-1))
+        except TypeError:
+            raise TypeError('ROI input needs to be iterable')
+        try:
+            for item in frames:
+                if item < 0 or item >= self.numFrames:
+                    raise ValueError('Frame value outside of allowed ranged (%d through %d)'%(0, self.numFrames-1))
+        except TypeError:
+            raise TypeError('Frame input needs to be iterable')
+        if self.speVersion >= 3:           
             regionOffset=0
             with open(self.filePath, encoding="utf8") as f:            
                 bpp = np.dtype(self.dataTypes[self.pixelFormat]).itemsize            
@@ -166,9 +177,22 @@ class SpeReference():
                         tmp = np.fromfile(f,dtype=self.dataTypes[self.pixelFormat],count=readCount,offset=np.uint64(4100+(regionOffset*bpp)+(frameOffset*bpp)))
                         regionData[j,:] = np.reshape(tmp,[self.roiList[rois[i]].height,self.roiList[rois[i]].width])
                     dataList.append(regionData)
-        
+        elif self.speVersion >=2 and self.speVersion <3:
+            if len(rois) != 1 and rois[0] !=0:
+                raise ValueError('Only one ROI allowed for spe v2 parsing.')
+            with open(self.filePath, encoding="utf8") as f:
+                bpp = np.dtype(self.dataTypes_old_spe[self.pixelFormat]).itemsize
+                regionData = np.zeros([len(frames), self.roiList[0].height, self.roiList[0].width], dtype=self.dataTypes_old_spe[self.pixelFormat])     
+                for j in range(0,len(frames)):
+                    f.seek(0)
+                    frameOffset = (self.roiList[0].stride) * frames[j]
+                    tmp = np.fromfile(f,dtype=self.dataTypes_old_spe[self.pixelFormat],count=np.uint64(self.roiList[0].stride / bpp),offset=np.uint64(4100+frameOffset))
+                    regionData[j] = np.reshape(tmp, [len(frames), self.roiList[0].height, self.roiList[0].width])
+                dataList.append(regionData)        
         return dataList
     def GetWavelengths(self,*,rois:Sequence[int]):
+        if self.speVersion < 3:
+            print('Version %0.1f spe files do not have wavelength cal.'%(self.speVersion))
         if len(self.wavelength) == 0:
             return []
         else:

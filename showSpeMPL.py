@@ -731,7 +731,7 @@ if __name__=="__main__":
     fontStats = 18
 
     #global
-    spe_state_objects = []
+    spe_state_objects: list[SpeState] = []
     pixel_axis = False #if True, then x-axis is displayed as pixel even if calibration exists
     autocontrast = True
     bg = False
@@ -755,7 +755,11 @@ if __name__=="__main__":
             PrintSelectedXmlEntries(xmlTotal)
             print('%d region(s):'%(len(spe_state_objects[i].spe_file.roiList)))
         except:
-            print('xml could not be formatted and/ or parsed')
+            if spe_state_objects[i].spe_file.speVersion < 3:
+                print('spe file version %0.1f does not have an xml footer. Only first ROI is displayed for this spe file version.'%(spe_state_objects[i].spe_file.speVersion))
+                bits = 16 #assume 16 bit data for legacy spe files. this may or may not be true -- please alert if issue discovered.
+            else:
+                print('xml could not be formatted and/ or parsed')
         for j in range(0,spe_state_objects[i].num_regions):
             print('\tROI %02d: %d x %d, xbin %d, ybin %d'%(j+1, spe_state_objects[i].region_list[j].region.width, spe_state_objects[i].region_list[j].region.height, spe_state_objects[i].region_list[j].region.x_bin, spe_state_objects[i].region_list[j].region.y_bin))
             spe_state_objects[i].region_list[j].fig = plt.figure('%s, ROI %02d'%(spe_state_objects[i].spe_file.file_name, j+1))
