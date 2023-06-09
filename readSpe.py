@@ -17,6 +17,10 @@ from collections.abc import (
     Sequence
 )
 from pathlib import PurePath
+from typing import TypeAlias
+
+setting_value_type: TypeAlias = np.uint64 | np.int64 | np.float64 | str
+pixel_format: TypeAlias = str | int | None
 
 class ROI:
     def __init__(self,width,height,stride):
@@ -34,7 +38,21 @@ class MetaContainer:
         self.stride=stride
         self.metaEvent=metaEvent
         self.metaResolution=metaResolution
-  
+
+class ExperimentSetting():
+    def __init__(self, setting_name: str, setting_value: setting_value_type, setting_type: type) -> None:
+        self._setting_name = setting_name
+        self._setting_value = setting_value
+        self._setting_type = setting_type
+    @property
+    def setting_name(self) -> str:
+        return self._setting_name
+    @property
+    def setting_value(self) -> setting_value_type:
+        return self._setting_value
+    @property
+    def setting_type(self) -> type:
+        return self._setting_type  
 
 #right now works with spe3 only
 class SpeReference():
@@ -51,7 +69,7 @@ class SpeReference():
         self.roiList: list[ROI] = []
         self.readoutStride = 0
         self.numFrames = 0
-        self.pixelFormat = None
+        self.pixelFormat: pixel_format = None
         self.wavelength = []
         self.sensorDims = None
         self.metaList = []
@@ -275,4 +293,25 @@ class SpeReference():
                                                             if 'Camera'.casefold() in child3.tag.casefold():
                                                                 settings_dictionary['camera_info'] = '%s, SN: %s'%(child3.get('model'),child3.get('serialNumber'))
         return settings_dictionary
-    
+    def GenerateFitsFile(self) -> None:
+        '''
+        work in progress;
+        generate a fits file using astropy library;
+        experiment settings to carry over from spe xml to fits header are being considered for addition
+        one file per ROI
+        '''
+        for region in self.roiList:
+            if region.height < 1 or region.width < 1:
+                raise ValueError('One or more region(s) of the spe file do not have valid data.')
+        if self.speVersion >= 3:
+            datatype: np.dtype = self.dataTypes[self.pixelFormat]
+        else:
+            datatype: np.dtype = self.dataTypes_old_spe[self.pixelFormat]
+        from astropy.io import fits
+        for i in range(0, len(self.roiList)):
+            output_filepath = '%s\\%s-ROI%03d.fits'%(self.file_directory, self.file_name, i+1)
+            region_data = np.zeros([self.numFrames, self.roiList[i].height, self.roiList[i].width], dtype=datatype)
+            for j in range(0, self.numFrames):
+                region_data[j] = self.GetData(rois=[i], frames=[j])[0]
+            hdu = fits.PrimaryHDU(region_data)
+            hdu.writeto(output_filepath, overwrite=True)
