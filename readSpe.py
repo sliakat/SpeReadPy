@@ -18,32 +18,91 @@ from collections.abc import (
 )
 from pathlib import PurePath
 from typing import TypeAlias
+from enum import (
+    Enum,
+    auto
+)
 
 setting_value_type: TypeAlias = np.uint64 | np.int64 | np.float64 | str
 pixel_format: TypeAlias = str | int | None
 
-class ROI:
+class ROI():
     def __init__(self,width,height,stride):
-        self.width=width
-        self.height=height
-        self.stride=stride
-        self.X = 0
-        self.Y = 0
-        self.xbin = 1
-        self.ybin = 1
+        self._width=width
+        self._height=height
+        self._stride=stride
+        self._X = 0
+        self._Y = 0
+        self._xbin = 1
+        self._ybin = 1
+    @property
+    def width(self) -> int:
+        return self._width
+    @width.setter
+    def width(self, val: int):
+        self._width = val
+    @property
+    def height(self) -> int:
+        return self._height
+    @height.setter
+    def height(self, val: int):
+        self._height = val
+    @property
+    def stride(self) -> int:
+        return self._stride
+    @stride.setter
+    def stride(self, val: int):
+        self._stride = val
+    @property
+    def X(self) -> int:
+        return self._X
+    @X.setter
+    def X(self, val: int):
+        self._X = val
+    @property
+    def Y(self) -> int:
+        return self._Y
+    @Y.setter
+    def Y(self, val: int):
+        self._Y = val
+    @property
+    def xbin(self) -> int:
+        return self._xbin
+    @xbin.setter
+    def xbin(self, val: int):
+        self._xbin = val
+    @property
+    def ybin(self) -> int:
+        return self._ybin
+    @ybin.setter
+    def ybin(self, val: int):
+        self._ybin = val
+    
+    
+    
         
-class MetaContainer:
+class MetaContainer():
     def __init__(self,metaType,stride,*,metaEvent:str='',metaResolution:np.int64=0):
         self.metaType=metaType
         self.stride=stride
         self.metaEvent=metaEvent
         self.metaResolution=metaResolution
 
+class Unit(Enum):
+    NONE = auto
+    MS = auto
+    US = auto
+    NM = auto
+    MHz = auto
+    DEGREES_CELSIUS = auto
+    BITS = auto
+
 class ExperimentSetting():
-    def __init__(self, setting_name: str, setting_value: setting_value_type, setting_type: type) -> None:
+    def __init__(self, setting_name: str, setting_value: setting_value_type, setting_type: type, setting_unit: Unit) -> None:
         self._setting_name = setting_name
         self._setting_value = setting_value
         self._setting_type = setting_type
+        self._setting_unit = setting_unit
     @property
     def setting_name(self) -> str:
         return self._setting_name
@@ -53,6 +112,9 @@ class ExperimentSetting():
     @property
     def setting_type(self) -> type:
         return self._setting_type  
+    @property
+    def setting_unit(self) -> Unit:
+        return self._setting_unit
 
 #right now works with spe3 only
 class SpeReference():
@@ -293,6 +355,86 @@ class SpeReference():
                                                             if 'Camera'.casefold() in child3.tag.casefold():
                                                                 settings_dictionary['camera_info'] = '%s, SN: %s'%(child3.get('model'),child3.get('serialNumber'))
         return settings_dictionary
+    def GenerateSettingsList(self) -> list[ExperimentSetting]:
+        '''
+        parse xml for key settings and output as a list of ExperimentSetting.
+        settings to include are TBD
+        list will include:
+        - sensor name
+        - camera model
+        - camera serial number
+        - exposure time
+        - ADC Speed
+        - ADC Analog gain
+        - bit depth
+        - readout time
+        - shift rate
+        - sensor temperature
+        - number of ports used
+        - x bin (region dependent, parse directly from region list when needed)
+        - y bin (see above for x bin)
+        '''
+        experiment_settings_list = []
+
+        #xml parsing
+        xmlRoot = ET.fromstring(self.xmlFooter)
+        for child in xmlRoot:
+            if 'DataHistories'.casefold() in child.tag.casefold():
+                for child1 in child:
+                    if 'DataHistory'.casefold() in child1.tag.casefold():
+                        for child2 in child1:
+                            if 'Origin'.casefold() in child2.tag.casefold():
+                                for child3 in child2:
+                                    if 'Experiment'.casefold() in child3.tag.casefold():
+                                        for child4 in child3:                                            
+                                            if 'Devices'.casefold() in child4.tag.casefold():
+                                                for child2 in child4:
+                                                    if 'Cameras'.casefold() in child2.tag.casefold():
+                                                        for child3 in child2:
+                                                            if 'Camera'.casefold() in child3.tag.casefold():
+                                                                for child4 in child3:
+                                                                    if 'ShutterTiming'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'ExposureTime'.casefold() in child5.tag.casefold():
+                                                                                experiment_settings_list.append(ExperimentSetting('EXPOSURE_TIME',  np.float64(child5.text), np.float64, Unit.MS))
+                                                                    if 'Adc'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'Speed'.casefold() in child5.tag.casefold():
+                                                                                if child5.get('relevance') != 'False':
+                                                                                    experiment_settings_list.append(ExperimentSetting('ADC_SPEED',  np.float64(child5.text), np.float64, Unit.MHz))
+                                                                            if 'AnalogGain'.casefold() in child5.tag.casefold():
+                                                                                if child5.get('relevance') != 'False':
+                                                                                    experiment_settings_list.append(ExperimentSetting('ADC_ANALOG_GAIN', str(child5.text), str, Unit.NONE))
+                                                                            if 'BitDepth'.casefold() in child5.tag.casefold():
+                                                                                experiment_settings_list.append(ExperimentSetting('BIT_DEPTH',  np.int64(child5.text), np.int64, Unit.BITS))
+                                                                    if 'ReadoutControl'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'Time'.casefold() in child5.tag.casefold():
+                                                                                experiment_settings_list.append(ExperimentSetting('READOUT_TIME',  np.float64(child5.text), np.float64, Unit.MS))
+                                                                            if 'VerticalShiftRate'.casefold() in child5.tag.casefold():
+                                                                                if child5.get('relevance') != 'False':
+                                                                                    experiment_settings_list.append(ExperimentSetting('VERTICAL_SHIFT_RATE',  np.float64(child5.text), np.float64, Unit.US))
+                                                                            if 'PortsUsed'.casefold() in child5.tag.casefold():
+                                                                                experiment_settings_list.append(ExperimentSetting('PORTS_USED',  np.int64(child5.text), np.int64, Unit.NONE))
+                                                                    if 'Sensor'.casefold() in child4.tag.casefold():
+                                                                        for child5 in child4:
+                                                                            if 'Temperature'.casefold() in child5.tag.casefold():
+                                                                                for child6 in child5:
+                                                                                    if 'Reading'.casefold() in child6.tag.casefold():
+                                                                                        experiment_settings_list.append(ExperimentSetting('SENSOR_TEMPERATURE',  np.float64(child6.text), np.float64, Unit.DEGREES_CELSIUS))
+                                                                            if 'Information'.casefold() in child5.tag.casefold():
+                                                                                for child6 in child5:
+                                                                                    if 'SensorName'.casefold() in child6.tag.casefold():
+                                                                                        experiment_settings_list.append(ExperimentSetting('SENSOR_INFORMATION', str(child6.text), str, Unit.NONE))
+                                            if 'System'.casefold() in child4.tag.casefold():
+                                                for child2 in child4:
+                                                    if 'Cameras'.casefold() in child2.tag.casefold():
+                                                        for child3 in child2:
+                                                            if 'Camera'.casefold() in child3.tag.casefold():
+                                                                experiment_settings_list.append(ExperimentSetting('CAMERA_MODEL', str(child3.get('model')), str, Unit.NONE))
+                                                                experiment_settings_list.append(ExperimentSetting('SERIAL_NUMBER', str(child3.get('serialNumber')), str, Unit.NONE))
+        #
+        return experiment_settings_list
     def GenerateFitsFile(self) -> None:
         '''
         work in progress;
@@ -314,4 +456,11 @@ class SpeReference():
             for j in range(0, self.numFrames):
                 region_data[j] = self.GetData(rois=[i], frames=[j])[0]
             hdu = fits.PrimaryHDU(region_data)
+            hdr = hdu.header
+            #append experiment settings list to header
+            experiment_settings_list = self.GenerateSettingsList()
+            experiment_settings_list.append(ExperimentSetting('X_BIN', np.int64(self.roiList[i].xbin), np.int64, Unit.NONE))
+            experiment_settings_list.append(ExperimentSetting('Y_BIN', np.int64(self.roiList[i].ybin), np.int64, Unit.NONE))
+            for setting in experiment_settings_list:
+                hdr['HIERARCH %s'%(setting.setting_name)] = setting.setting_value
             hdu.writeto(output_filepath, overwrite=True)
