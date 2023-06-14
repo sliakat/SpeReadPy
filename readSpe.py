@@ -22,9 +22,21 @@ from enum import (
     Enum,
     auto
 )
+import os
 
 setting_value_type: TypeAlias = np.uint64 | np.int64 | np.float64 | str
 pixel_format: TypeAlias = str | int | None
+meta_type: TypeAlias = np.int64 | np.float64
+meta_type_dict = {'Int64': np.int64, 'Double': np.float64}
+
+class Unit(Enum):
+    NONE = auto
+    MS = auto
+    US = auto
+    NM = auto
+    MHz = auto
+    DEGREES_CELSIUS = auto
+    BITS = auto
 
 class ROI():
     def __init__(self,width,height,stride):
@@ -77,25 +89,61 @@ class ROI():
     @ybin.setter
     def ybin(self, val: int):
         self._ybin = val
-    
-    
-    
         
 class MetaContainer():
-    def __init__(self,metaType,stride,*,metaEvent:str='',metaResolution:np.int64=0):
-        self.metaType=metaType
-        self.stride=stride
-        self.metaEvent=metaEvent
-        self.metaResolution=metaResolution
+    def __init__(self,metaType: str,stride: np.uint64,*,metaEvent:str='',metaResolution:np.uint64=0):
+        self._metaType=meta_type_dict[metaType]
+        self._stride=stride
+        self._metaEvent=metaEvent
+        self._metaResolution=metaResolution
+    @property
+    def meta_type(self) -> str:
+        return self._metaType
+    @property
+    def stride(self) -> np.uint64:
+        return self._stride
+    @property
+    def meta_event(self) -> str:
+        return self._metaEvent
+    @property
+    def meta_resolution(self) -> np.uint64:
+        return self._metaResolution
 
-class Unit(Enum):
-    NONE = auto
-    MS = auto
-    US = auto
-    NM = auto
-    MHz = auto
-    DEGREES_CELSIUS = auto
-    BITS = auto
+#metadata objects
+class Metadata():
+    def __init__(self, event_name: str, datatype: str, bit_depth: np.uint64) -> None:
+        self._meta_event = event_name
+        self._datatype = meta_type_dict[datatype]
+        self._bit_depth = bit_depth
+    @property
+    def meta_event(self) -> str:
+        return self._meta_event
+    @property
+    def datatype(self) -> np.dtype:
+        return self._datatype
+    @property
+    def bit_depth(self) -> np.uint64:
+        return self._bit_depth
+class TimeStamp(Metadata):
+    _unit = Unit.MS
+    def __init__(self, event_name: str, datatype: str, bit_depth: np.uint64, resolution: np.uint64, absolute_time: str) -> None:
+        super().__init__(event_name, datatype, bit_depth)
+        self._resolution = resolution
+        self._absolute_time = absolute_time
+    @property
+    def resolution(self) -> np.uint64:
+        return self._resolution
+    @property
+    def absolute_time(self) -> str:
+        return self._absolute_time
+    @property
+    def unit(self) -> Unit:
+        return self._unit
+class FrameTrackingNumber(Metadata):
+    def __init__(self, datatype: str, bit_depth: np.uint64) -> None:
+        super().__init__('Frame Tracking Number', datatype, bit_depth)
+    
+
 
 class ExperimentSetting():
     def __init__(self, setting_name: str, setting_value: setting_value_type, setting_type: type, setting_unit: Unit) -> None:
@@ -116,7 +164,8 @@ class ExperimentSetting():
     def setting_unit(self) -> Unit:
         return self._setting_unit
 
-#right now works with spe3 only
+
+
 class SpeReference():
     @staticmethod
     def split_file_path(filepath: str) -> tuple[str, str, str]:
@@ -130,11 +179,13 @@ class SpeReference():
         self.speVersion = 0
         self.roiList: list[ROI] = []
         self.readoutStride = 0
+        self.frameStride = 0
         self.numFrames = 0
         self.pixelFormat: pixel_format = None
         self.wavelength = []
         self.sensorDims = None
-        self.metaList = []
+        self.metaList: Sequence[Metadata] = []
+        self.frame_metadata_values: Sequence[Sequence[meta_type]] = []
         self.xmlFooter = ''
         self.InitializeSpe()
 
@@ -155,6 +206,7 @@ class SpeReference():
                         for child1 in child:                    
                             if 'DataBlock'.casefold() in child1.tag.casefold():
                                 self.readoutStride=np.uint64(child1.get('stride'))
+                                self.frameStride = np.uint64(child1.get('size'))
                                 self.numFrames=np.uint64(child1.get('count'))
                                 self.pixelFormat=child1.get('pixelFormat')
                                 for child2 in child1:
@@ -164,17 +216,23 @@ class SpeReference():
                                         regHeight=np.int64(child2.get('height'))
                                         self.roiList.append(ROI(regWidth,regHeight,regStride))
                     if 'MetaFormat'.casefold() in child.tag.casefold():
-                        for child1 in child:                    
+                        for child1 in child:
                             if 'MetaBlock'.casefold() in child1.tag.casefold():
                                 for child2 in child1:
-                                    metaType = child2.tag.rsplit('}',maxsplit=1)[1]
-                                    metaEvent = child2.get('event')
-                                    metaStride = np.int64(np.int64(child2.get('bitDepth'))/8)
-                                    metaResolution = child2.get('resolution')
-                                    if metaEvent != None and metaResolution !=None:
-                                        self.metaList.append(MetaContainer(metaType,metaStride,metaEvent=metaEvent,metaResolution=np.int64(metaResolution)))
-                                    else:
-                                        self.metaList.append(MetaContainer(metaType,metaStride))                                
+                                    metaType: str = child2.tag.rsplit('}',maxsplit=1)[1]
+                                    metaEvent: str = child2.get('event')
+                                    metaDataType:str  = child2.get('type')
+                                    metaBitDepth = np.uint64(child2.get('bitDepth'))                                    
+                                    match metaType:
+                                        case 'TimeStamp':
+                                            metaResolution = np.uint64(child2.get('resolution'))
+                                            metaAbsoluteTime:str = child2.get('absoluteTime')
+                                            self.metaList.append(TimeStamp(metaEvent, metaDataType, metaBitDepth, metaResolution, metaAbsoluteTime))
+                                        case 'FrameTrackingNumber':
+                                            self.metaList.append(FrameTrackingNumber(metaDataType, metaBitDepth))
+                                        case _:
+                                            raise RuntimeError('Metadata block was not recognized.')
+
                     if 'Calibrations'.casefold() in child.tag.casefold():
                         counter = 0
                         for child1 in child:
@@ -204,7 +262,13 @@ class SpeReference():
                                     self.roiList[counter].height = np.uint64(ogHeight / self.roiList[counter].ybin)
                                     counter += 1
                                 else:
-                                    break   
+                                    break
+                #now that xml parsing is done, extract all the metadata (if present)
+                if len(self.metaList) > 0:
+                    self.frame_metadata_values = [0] * self.numFrames
+                    for i in range(0, self.numFrames):
+                        self.frame_metadata_values[i] = self.GetFrameMetaDataValue([i])
+
             elif self.speVersion >=2 and self.speVersion <3:
                 f.seek(108)
                 self.pixelFormat=np.fromfile(f,dtype=np.int16,count=1)[0]
@@ -435,32 +499,96 @@ class SpeReference():
                                                                 experiment_settings_list.append(ExperimentSetting('SERIAL_NUMBER', str(child3.get('serialNumber')), str, Unit.NONE))
         #
         return experiment_settings_list
-    def GenerateFitsFile(self) -> None:
+
+    def GetFrameMetaDataValue(self, frames: Sequence[int]) -> Sequence[Sequence[meta_type]]:
+        output_metadata = [0] * len(frames)
+        with open(self.filePath, encoding="utf8") as f:
+            for i in range(0, len(frames)):                
+                output_metadata[i] = [0] * len(self.metaList)
+                readout_offset = frames[i] * self.readoutStride
+                metadata_offset = int(readout_offset + self.frameStride)
+                for j in range(0, len(self.metaList)):
+                    f.seek(0)                    
+                    if j > 0:
+                        metadata_offset += int((self.metaList[j-1].bit_depth) / 8)
+                    meta_length = np.dtype(self.metaList[j].datatype).itemsize // int((self.metaList[j-1].bit_depth) / 8)
+                    output_metadata[i][j] = np.fromfile(f, dtype=self.metaList[j].datatype, count=meta_length, offset=int(4100+metadata_offset))[0]
+                    if type(self.metaList[j]) == TimeStamp:
+                        output_metadata[i][j] = (output_metadata[i][j] / self.metaList[j].resolution) * 1000
+        return output_metadata
+
+
+class Fits():
+    @staticmethod
+    def GenerateFitsFile(spe_ref: SpeReference) -> None:
         '''
         work in progress;
         generate a fits file using astropy library;
         experiment settings to carry over from spe xml to fits header are being considered for addition
         one file per ROI
+        frame metadata not included -- use GenerateFitsFiles for that
         '''
-        for region in self.roiList:
+        for region in spe_ref.roiList:
             if region.height < 1 or region.width < 1:
                 raise ValueError('One or more region(s) of the spe file do not have valid data.')
-        if self.speVersion >= 3:
-            datatype: np.dtype = self.dataTypes[self.pixelFormat]
+        if spe_ref.speVersion >= 3:
+            datatype: np.dtype = spe_ref.dataTypes[spe_ref.pixelFormat]
         else:
-            datatype: np.dtype = self.dataTypes_old_spe[self.pixelFormat]
+            datatype: np.dtype = spe_ref.dataTypes_old_spe[spe_ref.pixelFormat]
         from astropy.io import fits
-        for i in range(0, len(self.roiList)):
-            output_filepath = '%s\\%s-ROI%03d.fits'%(self.file_directory, self.file_name, i+1)
-            region_data = np.zeros([self.numFrames, self.roiList[i].height, self.roiList[i].width], dtype=datatype)
-            for j in range(0, self.numFrames):
-                region_data[j] = self.GetData(rois=[i], frames=[j])[0]
+        for i in range(0, len(spe_ref.roiList)):
+            output_filepath = '%s\\%s-ROI%03d.fits'%(spe_ref.file_directory, spe_ref.file_name, i+1)
+            region_data = np.zeros([spe_ref.numFrames, spe_ref.roiList[i].height, spe_ref.roiList[i].width], dtype=datatype)
+            for j in range(0, spe_ref.numFrames):
+                region_data[j] = spe_ref.GetData(rois=[i], frames=[j])[0]
             hdu = fits.PrimaryHDU(region_data)
             hdr = hdu.header
             #append experiment settings list to header
-            experiment_settings_list = self.GenerateSettingsList()
-            experiment_settings_list.append(ExperimentSetting('X_BIN', np.int64(self.roiList[i].xbin), np.int64, Unit.NONE))
-            experiment_settings_list.append(ExperimentSetting('Y_BIN', np.int64(self.roiList[i].ybin), np.int64, Unit.NONE))
+            experiment_settings_list = spe_ref.GenerateSettingsList()
+            experiment_settings_list.append(ExperimentSetting('X_BIN', np.int64(spe_ref.roiList[i].xbin), np.int64, Unit.NONE))
+            experiment_settings_list.append(ExperimentSetting('Y_BIN', np.int64(spe_ref.roiList[i].ybin), np.int64, Unit.NONE))
             for setting in experiment_settings_list:
                 hdr['HIERARCH %s'%(setting.setting_name)] = setting.setting_value
             hdu.writeto(output_filepath, overwrite=True)
+    @staticmethod
+    def GenerateFitsFiles(spe_ref:SpeReference) -> None:
+        '''
+        see docstring for GenerateFitsFile
+        difference here is a new directory will be created and have 1 fits file per ROI per frame
+        frame metadata for exposure started timestamp will be present in the header of each file (if exists in the spe)
+        '''
+        for region in spe_ref.roiList:
+            if region.height < 1 or region.width < 1:
+                raise ValueError('One or more region(s) of the spe file do not have valid data.')
+        if spe_ref.speVersion >= 3:
+            datatype: np.dtype = spe_ref.dataTypes[spe_ref.pixelFormat]
+        else:
+            datatype: np.dtype = spe_ref.dataTypes_old_spe[spe_ref.pixelFormat]
+        from astropy.io import fits
+        new_folder_path = '%s\\%s-fits\\'%(spe_ref.file_directory, spe_ref.file_name)
+        if not os.path.exists(new_folder_path):
+            os.mkdir(new_folder_path)
+        for i in range(0, len(spe_ref.roiList)):
+            for j in range(0, spe_ref.numFrames):
+                output_filepath = '%s\\%s-ROI%03d-Frame%04d.fits'%(new_folder_path, spe_ref.file_name, i+1, j+1)
+                file_data = spe_ref.GetData(rois=[i], frames=[j])[0]
+                frame_metadata = spe_ref.GetFrameMetaDataValue([j])[0]
+                hdu = fits.PrimaryHDU(file_data)
+                hdr = hdu.header
+                #add time stamps to header if they exist
+                if len(spe_ref.metaList) > 0:
+                    count = 0
+                    for meta in spe_ref.metaList:
+                        if type(meta) == TimeStamp:
+                            if meta.meta_event == 'ExposureStarted':
+                                hdr['HIERARCH ACQUISITION_ORIGIN'] = meta.absolute_time
+                                hdr['HIERARCH FRAME_EXPOSURE_STARTED_OFFSET_MS'] = frame_metadata[count]
+                        count += 1
+                #append experiment settings list to header
+                experiment_settings_list = spe_ref.GenerateSettingsList()
+                experiment_settings_list.append(ExperimentSetting('X_BIN', np.int64(spe_ref.roiList[i].xbin), np.int64, Unit.NONE))
+                experiment_settings_list.append(ExperimentSetting('Y_BIN', np.int64(spe_ref.roiList[i].ybin), np.int64, Unit.NONE))
+                for setting in experiment_settings_list:
+                    hdr['HIERARCH %s'%(setting.setting_name)] = setting.setting_value
+                hdu.writeto(output_filepath, overwrite=True)
+    
