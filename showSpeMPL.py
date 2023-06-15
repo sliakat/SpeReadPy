@@ -750,6 +750,7 @@ if __name__=="__main__":
         print('**Information for %s%s**'%(spe_state_objects[i].spe_file.file_name, spe_state_objects[i].spe_file.file_extension))
         xmlTotal = spe_state_objects[i].spe_file.xmlFooter
         xmlFormat = ''
+        bits = None
         try:
             xmlFormat = dom.parseString(xmlTotal).toprettyxml()
             PrintSelectedXmlEntries(xmlTotal)
@@ -757,9 +758,10 @@ if __name__=="__main__":
         except:
             if spe_state_objects[i].spe_file.speVersion < 3:
                 print('spe file version %0.1f does not have an xml footer. Only first ROI is displayed for this spe file version.'%(spe_state_objects[i].spe_file.speVersion))
-                bits = 16 #assume 16 bit data for legacy spe files. this may or may not be true -- please alert if issue discovered.
             else:
                 print('xml could not be formatted and/ or parsed')
+        if bits == None:
+            bits = 16 #assume 16 bit data for legacy spe files or files that don't have it in the xml content. this may or may not be true -- please alert if issue discovered.
         for j in range(0,spe_state_objects[i].num_regions):
             print('\tROI %02d: %d x %d, xbin %d, ybin %d'%(j+1, spe_state_objects[i].region_list[j].region.width, spe_state_objects[i].region_list[j].region.height, spe_state_objects[i].region_list[j].region.x_bin, spe_state_objects[i].region_list[j].region.y_bin))
             spe_state_objects[i].region_list[j].fig = plt.figure('%s, ROI %02d'%(spe_state_objects[i].spe_file.file_name, j+1))
