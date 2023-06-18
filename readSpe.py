@@ -33,6 +33,7 @@ class Unit(Enum):
     NONE = auto
     MS = auto
     US = auto
+    NS = auto
     NM = auto
     MHz = auto
     DEGREES_CELSIUS = auto
@@ -142,8 +143,17 @@ class TimeStamp(Metadata):
 class FrameTrackingNumber(Metadata):
     def __init__(self, datatype: str, bit_depth: np.uint64) -> None:
         super().__init__('Frame Tracking Number', datatype, bit_depth)
-    
-
+class GateTrackimg(Metadata):
+    _unit = Unit.NS
+    def __init__(self, event_name: str, datatype: str, bit_depth: np.uint64, monotonic: bool) -> None:
+        super().__init__(event_name, datatype, bit_depth)
+        self._monotonic = monotonic
+    @property
+    def monotonic(self) -> bool:
+        return self._monotonic
+    @property
+    def unit(self) -> Unit:
+        return self._unit
 
 class ExperimentSetting():
     def __init__(self, setting_name: str, setting_value: setting_value_type, setting_type: type, setting_unit: Unit) -> None:
@@ -230,6 +240,10 @@ class SpeReference():
                                             self.metaList.append(TimeStamp(metaEvent, metaDataType, metaBitDepth, metaResolution, metaAbsoluteTime))
                                         case 'FrameTrackingNumber':
                                             self.metaList.append(FrameTrackingNumber(metaDataType, metaBitDepth))
+                                        case 'GateTracking':
+                                            metaEvent: str = child2.get('component')
+                                            metaMonotonic = bool(child2.get('monotonic'))
+                                            self.metaList.append(GateTrackimg(metaEvent, metaDataType, metaBitDepth, metaMonotonic))
                                         case _:
                                             raise RuntimeError('Metadata block was not recognized.')
 
