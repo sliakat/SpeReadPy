@@ -5,7 +5,12 @@ Created on Wed Feb  9 16:03:10 2022
 @author: sliakat
 """
 
-from readSpe import SpeReference
+from readSpe import (
+    SpeReference,
+    TimeStamp,
+    FrameTrackingNumber,
+    GateTrackimg
+)
 import numpy as np
 import tkinter as tk
 from tkinter import filedialog
@@ -18,6 +23,7 @@ from scipy import interpolate
 from matplotlib import cm
 from matplotlib.colors import ListedColormap
 from typing import Any
+from collections.abc import Sequence
 
 class Region():
     def __init__(self, x: int=-1, y: int=-1, og_width: int=0, og_height: int=0, width: int=0, height:int=0, x_bin: int=0, y_bin: int=0) -> None:
@@ -113,7 +119,7 @@ class SpeState():
     def __init__(self,spe_file_path:str) -> None:
         self._spe_file = SpeReference(spe_file_path)
         self._num_regions = len(self.spe_file.roiList)
-        self.region_list = []
+        self.region_list: Sequence[RegionImageState] = []
         for i in range(0, self.num_regions):
             self.region_list.append(RegionImageState(i))
             self.region_list[i].region.x = self.spe_file.roiList[i].X
@@ -266,11 +272,27 @@ def GenCustomCmap(data, bits: int=16):  #take gray cmap, make yellow if 0, red i
 #callback for slider
 def update_frame(val, spe_state: SpeState, region: RegionImageState):
     region.fig.canvas.draw_idle()
-    region.current_frame = int(val) - 1
-    data = spe_state.spe_file.GetData(frames=[region.current_frame], rois=[region.roi_index])[0][0]
+    region.current_frame = int(val)
+    data = spe_state.spe_file.GetData(frames=[region.current_frame - 1], rois=[region.roi_index])[0][0]
     if region.autocontrast:
         plotData(data,region.ax, region.region_wavelengths, '%s, ROI %02d'%(spe_state_objects[i].spe_file.file_name, region.roi_index+1),int(val),pixAxis=region.pixel_axis,xBound1=region.selection_rectangle.x_left,xBound2=region.selection_rectangle.x_right,yBound1=region.selection_rectangle.y_top,yBound2=region.selection_rectangle.y_bottom)
+    else:
+        plotData(data,region.ax, region.region_wavelengths, '%s, ROI %02d'%(spe_state_objects[i].spe_file.file_name, region.roi_index+1),int(val),pixAxis=region.pixel_axis,xBound1=-1,xBound2=-1,yBound1=-1,yBound2=-1)
+    print_metadata(spe_state.spe_file, region.current_frame)
     
+def print_metadata(spe_file: SpeReference, frame_number: int) -> None:
+    if len(spe_file.metaList) > 0:
+        print('Metadata for %s, frame %d:'%(spe_file.file_name, frame_number))
+        count = 0
+        for meta in spe_file.metaList:
+            meta_value = spe_file.frame_metadata_values[frame_number-1][0][count]
+            if type(meta) == TimeStamp:
+                 print('%s:\t%0.3f ms'%(meta.meta_event, meta_value))
+            if type(meta) == FrameTrackingNumber:
+                print('%s:\t%04d'%(meta.meta_event, meta_value))
+            if type(meta) == GateTrackimg:
+                 print('%s:\t%0.3f ns'%(meta.meta_event, meta_value))
+            count += 1
 #helper to get FWHM of a line section
 def FWHM(data):  #pass in a line (1D array)
     bias = np.percentile(data,10)  #take the 10th percentile of data as a bias
@@ -771,5 +793,6 @@ if __name__=="__main__":
             spe_state_objects[i].region_list[j].pixel_axis = pixel_axis
             spe_state_objects[i].region_list[j].autocontrast = autocontrast
             plotData(spe_state_objects[i].spe_file.GetData(frames=[0], rois=[j])[0][0], spe_state_objects[i].region_list[j].ax, spe_state_objects[i].region_list[j].region_wavelengths, '%s, ROI %02d'%(spe_state_objects[i].spe_file.file_name, j+1), pixAxis=pixel_axis)
+            print_metadata(spe_state_objects[i].spe_file, spe_state_objects[i].region_list[j].current_frame)
         print('\n')
     StopPrompt()
