@@ -275,9 +275,9 @@ def update_frame(val, spe_state: SpeState, region: RegionImageState):
     region.current_frame = int(val)
     data = spe_state.spe_file.GetData(frames=[region.current_frame - 1], rois=[region.roi_index])[0][0]
     if region.autocontrast:
-        plotData(data,region.ax, region.region_wavelengths, '%s, ROI %02d'%(spe_state_objects[i].spe_file.file_name, region.roi_index+1),int(val),pixAxis=region.pixel_axis,xBound1=region.selection_rectangle.x_left,xBound2=region.selection_rectangle.x_right,yBound1=region.selection_rectangle.y_top,yBound2=region.selection_rectangle.y_bottom)
+        plotData(data,region.ax, region.region_wavelengths, '%s, ROI %02d'%(spe_state.spe_file.file_name, region.roi_index+1),int(val),pixAxis=region.pixel_axis,xBound1=region.selection_rectangle.x_left,xBound2=region.selection_rectangle.x_right,yBound1=region.selection_rectangle.y_top,yBound2=region.selection_rectangle.y_bottom)
     else:
-        plotData(data,region.ax, region.region_wavelengths, '%s, ROI %02d'%(spe_state_objects[i].spe_file.file_name, region.roi_index+1),int(val),pixAxis=region.pixel_axis,xBound1=-1,xBound2=-1,yBound1=-1,yBound2=-1)
+        plotData(data,region.ax, region.region_wavelengths, '%s, ROI %02d'%(spe_state.spe_file.file_name, region.roi_index+1),int(val),pixAxis=region.pixel_axis,xBound1=-1,xBound2=-1,yBound1=-1,yBound2=-1)
     print_metadata(spe_state.spe_file, region.current_frame)
     
 def print_metadata(spe_file: SpeReference, frame_number: int) -> None:
