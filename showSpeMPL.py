@@ -118,16 +118,16 @@ class Rectangle():
 class SpeState():
     def __init__(self,spe_file_path:str) -> None:
         self._spe_file = SpeReference(spe_file_path)
-        self._num_regions = len(self.spe_file.roiList)
+        self._num_regions = len(self.spe_file._roi_list)
         self.region_list: Sequence[RegionImageState] = []
         for i in range(0, self.num_regions):
             self.region_list.append(RegionImageState(i))
-            self.region_list[i].region.x = self.spe_file.roiList[i].X
-            self.region_list[i].region.y = self.spe_file.roiList[i].Y
-            self.region_list[i].region.width = self.spe_file.roiList[i].width
-            self.region_list[i].region.height = self.spe_file.roiList[i].height
-            self.region_list[i].region.x_bin = self.spe_file.roiList[i].xbin
-            self.region_list[i].region.y_bin = self.spe_file.roiList[i].ybin
+            self.region_list[i].region.x = self.spe_file._roi_list[i].X
+            self.region_list[i].region.y = self.spe_file._roi_list[i].Y
+            self.region_list[i].region.width = self.spe_file._roi_list[i].width
+            self.region_list[i].region.height = self.spe_file._roi_list[i].height
+            self.region_list[i].region.x_bin = self.spe_file._roi_list[i].xbin
+            self.region_list[i].region.y_bin = self.spe_file._roi_list[i].ybin
     @property
     def spe_file(self)->SpeReference:
         return(self._spe_file)
@@ -172,13 +172,13 @@ class RegionImageState():
     def ax(self, val):
         self._ax = val
     @property
-    def rectangle_select(self) -> RectangleSelector:
+    def rectangle_select(self) -> RectangleSelector | None:
         return(self._rectangle_select)
     @rectangle_select.setter
     def rectangle_select(self, val):
         self._rectangle_select = val
     @property
-    def span_select(self) -> SpanSelector:
+    def span_select(self) -> SpanSelector | None:
         return (self._span_select)
     @span_select.setter
     def span_select(self, val):
@@ -189,7 +189,7 @@ class RegionImageState():
     def generate_mpl_widgets(self, spe_state: SpeState):
         '''connect to matplotlibs callback from object state'''
         #slider
-        self._slider = SliderGen(self.ax, spe_state.spe_file.numFrames)
+        self._slider = SliderGen(self.ax, spe_state.spe_file._num_frames)
         self.slider.label.set_size(fontLabels)
         self.slider_connect = self.slider.on_changed((lambda val: update_frame(val, spe_state, self)))
 
@@ -275,17 +275,17 @@ def update_frame(val, spe_state: SpeState, region: RegionImageState):
     region.current_frame = int(val)
     data = spe_state.spe_file.GetData(frames=[region.current_frame - 1], rois=[region.roi_index])[0][0]
     if region.autocontrast:
-        plotData(data,region.ax, region.region_wavelengths, '%s, ROI %02d'%(spe_state.spe_file.file_name, region.roi_index+1),int(val),pixAxis=region.pixel_axis,xBound1=region.selection_rectangle.x_left,xBound2=region.selection_rectangle.x_right,yBound1=region.selection_rectangle.y_top,yBound2=region.selection_rectangle.y_bottom)
+        plotData(data,region.ax, region.region_wavelengths, '%s, ROI %02d'%(spe_state.spe_file._file_name, region.roi_index+1),int(val),pixAxis=region.pixel_axis,xBound1=region.selection_rectangle.x_left,xBound2=region.selection_rectangle.x_right,yBound1=region.selection_rectangle.y_top,yBound2=region.selection_rectangle.y_bottom)
     else:
-        plotData(data,region.ax, region.region_wavelengths, '%s, ROI %02d'%(spe_state.spe_file.file_name, region.roi_index+1),int(val),pixAxis=region.pixel_axis,xBound1=-1,xBound2=-1,yBound1=-1,yBound2=-1)
+        plotData(data,region.ax, region.region_wavelengths, '%s, ROI %02d'%(spe_state.spe_file._file_name, region.roi_index+1),int(val),pixAxis=region.pixel_axis,xBound1=-1,xBound2=-1,yBound1=-1,yBound2=-1)
     print_metadata(spe_state.spe_file, region.current_frame)
     
 def print_metadata(spe_file: SpeReference, frame_number: int) -> None:
-    if len(spe_file.metaList) > 0:
-        print('Metadata for %s, frame %d:'%(spe_file.file_name, frame_number))
+    if len(spe_file._meta_list) > 0:
+        print('Metadata for %s, frame %d:'%(spe_file._file_name, frame_number))
         count = 0
-        for meta in spe_file.metaList:
-            meta_value = spe_file.frame_metadata_values[frame_number-1][0][count]
+        for meta in spe_file._meta_list:
+            meta_value = spe_file._frame_metadata_values[frame_number-1][0][count]
             if type(meta) == TimeStamp:
                  print('%s:\t%0.3f ms'%(meta.meta_event, meta_value))
             if type(meta) == FrameTrackingNumber:
@@ -387,7 +387,8 @@ def WriteStats(axis, string):
     global fontStats
     #clear previous text object
     for txt in axis.texts:
-        txt.set_visible(False)
+        txt.remove()
+    plt.draw()
     axis.text(0,1.15,string, fontsize=fontStats, verticalalignment='top', color = 'r', transform=axis.transAxes)
     
 
@@ -403,19 +404,24 @@ def GetStats(data, x1, x2, y1, y2):
 def box_select_callback(eclick, erelease, spe_state: SpeState, region: RegionImageState):
     x1, y1 = int(np.floor(eclick.xdata)), int(np.floor(eclick.ydata))
     x2, y2 = int(np.floor(erelease.xdata)), int(np.floor(erelease.ydata))
-    if not region.pixel_axis and len(region.region_wavelengths) > 0:
-        x1, x2 = findXPixels(region.region_wavelengths, x1, x2)
-    data = np.array(region.ax.get_images().pop()._A)
-    centerRow = np.int32(np.floor(np.shape(data)[0]/2))
-    mean, dev, regMin, regMax = GetStats(data,x1,x2,y1,y2)
-    fwhm = FWHM(data[centerRow,x1:x2])
-    statsString = 'Region Mean: %0.2f          Region Min: %0.2f\nRegion Std: %0.2f          Region Max: %0.2f\nMin/Mean Ratio: %0.3f          FWHM of horizontal slice: %0.3f pix'%(mean,regMin,dev,regMax,(regMin/mean),fwhm)    
-    region.update_selection_rectangle(x1, x2, y1, y2)
-    if region.autocontrast:
-        plotData(data,region.ax,region.region_wavelengths,'%s, ROI %02d'%(spe_state.spe_file.file_name, region.roi_index+1),region.current_frame,pixAxis=region.pixel_axis,xBound1=x1,xBound2=x2,yBound1=y1,yBound2=y2)
+    if x2-x1 >= 10 and y2-y1 >= 10:
+        if not region.pixel_axis and len(region.region_wavelengths) > 0:
+            x1, x2 = findXPixels(region.region_wavelengths, x1, x2)
+        data = np.array(region.ax.get_images().pop()._A)
+        centerRow = np.int32(np.floor(np.shape(data)[0]/2))
+        mean, dev, regMin, regMax = GetStats(data,x1,x2,y1,y2)
+        fwhm = FWHM(data[centerRow,x1:x2])
+        statsString = 'Region Mean: %0.2f          Region Min: %0.2f\nRegion Std: %0.2f          Region Max: %0.2f\nMin/Mean Ratio: %0.3f          FWHM of horizontal slice: %0.3f pix'%(mean,regMin,dev,regMax,(regMin/mean),fwhm)    
+        region.update_selection_rectangle(x1, x2, y1, y2)
+        if region.autocontrast:
+            plotData(data,region.ax,region.region_wavelengths,'%s, ROI %02d'%(spe_state.spe_file._file_name, region.roi_index+1),region.current_frame,pixAxis=region.pixel_axis,xBound1=x1,xBound2=x2,yBound1=y1,yBound2=y2)
+        else:
+            plotData(data,region.ax,region.region_wavelengths,'%s, ROI %02d'%(spe_state.spe_file._file_name, region.roi_index+1),region.current_frame,pixAxis=region.pixel_axis,xBound1=-1,xBound2=-1,yBound1=-1,yBound2=-1)
+        WriteStats(region.ax, statsString)
     else:
-        plotData(data,region.ax,region.region_wavelengths,'%s, ROI %02d'%(spe_state.spe_file.file_name, region.roi_index+1),region.current_frame,pixAxis=region.pixel_axis,xBound1=-1,xBound2=-1,yBound1=-1,yBound2=-1)
-    WriteStats(region.ax, statsString)
+        for txt in region.ax.texts:
+            txt.remove()
+            plt.draw()
     plt.show()
         
 #callback for line selection
@@ -436,10 +442,8 @@ def StatsLinePlot(xmin, xmax, spe_state: SpeState, region: RegionImageState):
 def RectSelect(spe_state: SpeState, region: RegionImageState):
     return RectangleSelector(region.ax, lambda eclick, erelease: box_select_callback(eclick, erelease, spe_state, region),
                                        useblit=True,
-                                       button=[1, 3],  # disable middle button
-                                       minspanx=10, minspany=10,
-                                       spancoords='pixels',
-                                       interactive=True)
+                                       button=[1], minspanx=10, minspany=10,
+                                       spancoords='pixels', interactive=True)
 
 #matplotlib widget for line selection
 def SpanSelect(spe_state: SpeState, region: RegionImageState):
@@ -447,7 +451,7 @@ def SpanSelect(spe_state: SpeState, region: RegionImageState):
 
 def SliderGen(axis,maximum):
     fp = axis.get_position()        #get position of the figure
-    axvert = plt.axes([fp.x0-0.08, fp.y0, 0.0225, 0.75])
+    axvert = plt.axes((fp.x0-0.08, fp.y0, 0.0225, 0.75))
     return Slider(ax=axvert,label='%d Total Frames'%(maximum), valmin=1, valmax=maximum, valinit=1, orientation="vertical", valstep=1)
 
 #parse xml for experiment info
@@ -769,30 +773,30 @@ if __name__=="__main__":
     for i in range(len(filenames)): #originally intended to open multiple files in one kernel, but slider doesn't seem to connect to multiple figs.
                                     #for comparison of multiple images, open each in separate kernel
         spe_state_objects.append(SpeState(filenames[i]))
-        print('**Information for %s%s**'%(spe_state_objects[i].spe_file.file_name, spe_state_objects[i].spe_file.file_extension))
-        xmlTotal = spe_state_objects[i].spe_file.xmlFooter
+        print('**Information for %s%s**'%(spe_state_objects[i].spe_file._file_name, spe_state_objects[i].spe_file._file_extension))
+        xmlTotal = spe_state_objects[i].spe_file._xml_footer
         xmlFormat = ''
         bits = None
         try:
             xmlFormat = dom.parseString(xmlTotal).toprettyxml()
             PrintSelectedXmlEntries(xmlTotal)
-            print('%d region(s):'%(len(spe_state_objects[i].spe_file.roiList)))
+            print('%d region(s):'%(len(spe_state_objects[i].spe_file._roi_list)))
         except:
-            if spe_state_objects[i].spe_file.speVersion < 3:
-                print('spe file version %0.1f does not have an xml footer. Only first ROI is displayed for this spe file version.'%(spe_state_objects[i].spe_file.speVersion))
+            if spe_state_objects[i].spe_file._spe_version < 3:
+                print('spe file version %0.1f does not have an xml footer. Only first ROI is displayed for this spe file version.'%(spe_state_objects[i].spe_file._spe_version))
             else:
                 print('xml could not be formatted and/ or parsed')
         if bits == None:
             bits = 16 #assume 16 bit data for legacy spe files or files that don't have it in the xml content. this may or may not be true -- please alert if issue discovered.
         for j in range(0,spe_state_objects[i].num_regions):
             print('\tROI %02d: %d x %d, xbin %d, ybin %d'%(j+1, spe_state_objects[i].region_list[j].region.width, spe_state_objects[i].region_list[j].region.height, spe_state_objects[i].region_list[j].region.x_bin, spe_state_objects[i].region_list[j].region.y_bin))
-            spe_state_objects[i].region_list[j].fig = plt.figure('%s, ROI %02d'%(spe_state_objects[i].spe_file.file_name, j+1))
+            spe_state_objects[i].region_list[j].fig = plt.figure('%s, ROI %02d'%(spe_state_objects[i].spe_file._file_name, j+1))
             spe_state_objects[i].region_list[j].region_wavelengths = spe_state_objects[i].spe_file.GetWavelengths(rois=[j])
             spe_state_objects[i].region_list[j].ax = spe_state_objects[i].region_list[j].fig.add_subplot(111)
             spe_state_objects[i].region_list[j].generate_mpl_widgets(spe_state_objects[i])
             spe_state_objects[i].region_list[j].pixel_axis = pixel_axis
             spe_state_objects[i].region_list[j].autocontrast = autocontrast
-            plotData(spe_state_objects[i].spe_file.GetData(frames=[0], rois=[j])[0][0], spe_state_objects[i].region_list[j].ax, spe_state_objects[i].region_list[j].region_wavelengths, '%s, ROI %02d'%(spe_state_objects[i].spe_file.file_name, j+1), pixAxis=pixel_axis)
+            plotData(spe_state_objects[i].spe_file.GetData(frames=[0], rois=[j])[0][0], spe_state_objects[i].region_list[j].ax, spe_state_objects[i].region_list[j].region_wavelengths, '%s, ROI %02d'%(spe_state_objects[i].spe_file._file_name, j+1), pixAxis=pixel_axis)
             print_metadata(spe_state_objects[i].spe_file, spe_state_objects[i].region_list[j].current_frame)
         print('\n')
     StopPrompt()
