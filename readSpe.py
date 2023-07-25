@@ -20,7 +20,8 @@ from collections.abc import (
 from pathlib import PurePath
 from typing import (
     TypeAlias,
-    NewType
+    NewType,
+    cast
 )
 from enum import (
     Enum,
@@ -40,10 +41,11 @@ Rows = NewType('Rows', int)
 Cols = NewType('Cols', int)
 Wavelengths = NewType('Wavelengths', float)
 PixelDType: TypeAlias = np.dtype[np.uint16|np.uint32|np.float32]
+NumPyInteger: TypeAlias = np.uint16|np.uint32|np.uint64|np.int16|np.int32|np.int64
 WavelengthDType: TypeAlias = np.dtype[np.float64]
-ImageShape: TypeAlias = tuple[Frames, Rows, Cols]
+ImageShape: TypeAlias = tuple[Rows,Cols] | tuple[Frames, Rows, Cols]
 ImageNDArray: TypeAlias = np.ndarray[ImageShape, PixelDType]
-LineShape: TypeAlias = tuple[Frames, Cols]
+LineShape: TypeAlias = tuple[Cols] | tuple[Frames, Cols]
 LineNDArray: TypeAlias = np.ndarray[LineShape, PixelDType]
 SpeNDArray: TypeAlias = ImageNDArray | LineNDArray
 WavelengthShape: TypeAlias = tuple[Wavelengths]
@@ -144,7 +146,7 @@ class TimeStamp(Metadata):
 class FrameTrackingNumber(Metadata):
     def __init__(self, datatype: str, bit_depth: np.uint64) -> None:
         super().__init__('Frame Tracking Number', datatype, bit_depth)
-class GateTrackimg(Metadata):
+class GateTracking(Metadata):
     _unit = Unit.NS
     def __init__(self, event_name: str, datatype: str, bit_depth: np.uint64, monotonic: bool) -> None:
         super().__init__(event_name, datatype, bit_depth)
@@ -190,9 +192,9 @@ class SpeReference():
     _file_extension: str
     _spe_version: float
     _roi_list: list[ROI]
-    _readout_stride: int
-    _frame_stride: int
-    _num_frames: int
+    _readout_stride: NumPyInteger
+    _frame_stride: NumPyInteger
+    _num_frames: NumPyInteger
     _pixel_format_string: type_pixel_format
     _region_wavelengths: Sequence[WavelengthNDArray]
     _sensor_dims: ROI
@@ -252,7 +254,7 @@ class SpeReference():
                                         case 'GateTracking':
                                             metaEvent: str = child2.get('component')
                                             metaMonotonic = bool(child2.get('monotonic'))
-                                            self._meta_list.append(GateTrackimg(metaEvent, metaDataType, metaBitDepth, metaMonotonic))
+                                            self._meta_list.append(GateTracking(metaEvent, metaDataType, metaBitDepth, metaMonotonic))
                                         case _:
                                             raise RuntimeError('Metadata block was not recognized.')
 
@@ -288,9 +290,8 @@ class SpeReference():
                                     break
                 #now that xml parsing is done, extract all the metadata (if present)
                 if len(self._meta_list) > 0:
-                    self._frame_metadata_values = [0] * self._num_frames
                     for i in range(0, self._num_frames):
-                        self._frame_metadata_values[i] = self.GetFrameMetaDataValue([i])
+                        self._frame_metadata_values.append(self.GetFrameMetaDataValue([i]))
 
             elif self._spe_version >=2 and self._spe_version <3:
                 self._xml_footer = ''
@@ -308,7 +309,7 @@ class SpeReference():
                 raise ValueError('Unrecognized spe file.')
                     
 
-    def GetData(self,*,rois:Sequence[int], frames:Sequence[int]) -> Sequence[SpeNDArray]:
+    def GetData(self,*,rois:Sequence[int]=[], frames:Sequence[int]=[]) -> Sequence[SpeNDArray]:
         dataList = list()
         #if no inputs, or empty list, set to all
         if len(rois) == 0:
@@ -330,7 +331,8 @@ class SpeReference():
             raise TypeError('Frame input needs to be iterable')
         if self._spe_version >= 3:           
             regionOffset=0
-            with open(self._filepath, encoding="utf8") as f:            
+            with open(self._filepath, encoding="utf8") as f:
+                assert(type(self._pixel_format_string) == str)            
                 bpp = np.dtype(self._dataTypes[self._pixel_format_string]).itemsize            
                 for i in range(0,len(rois)):                
                     regionData = np.zeros([len(frames),self._roi_list[rois[i]].height, self._roi_list[rois[i]].width])
@@ -349,6 +351,7 @@ class SpeReference():
             if len(rois) != 1 and rois[0] !=0:
                 raise ValueError('Only one ROI allowed for spe v2 parsing.')
             with open(self._filepath, encoding="utf8") as f:
+                assert(type(self._pixel_format_string) == int)
                 bpp = np.dtype(self._dataTypes_old_spe[self._pixel_format_string]).itemsize
                 regionData = np.zeros([len(frames), self._roi_list[0].height, self._roi_list[0].width], dtype=self._dataTypes_old_spe[self._pixel_format_string])     
                 for j in range(0,len(frames)):
@@ -358,7 +361,7 @@ class SpeReference():
                     regionData[j] = np.reshape(tmp, [len(frames), self._roi_list[0].height, self._roi_list[0].width])
                 dataList.append(regionData)        
         return dataList
-    def GetWavelengths(self,*,rois:Sequence[int]) -> Sequence[WavelengthNDArray]:
+    def GetWavelengths(self,*,rois:Sequence[int]=[]) -> Sequence[WavelengthNDArray]:
         if self._spe_version < 3:
             print('Version %0.1f spe files do not have wavelength cal.'%(self._spe_version))
         if len(self._region_wavelengths) == 0:
@@ -525,7 +528,7 @@ class SpeReference():
         return experiment_settings_list
 
     def GetFrameMetaDataValue(self, frames: Sequence[int]) -> Sequence[Sequence[meta_type]]:
-        output_metadata = [0] * len(frames)
+        output_metadata: list = [0] * len(frames)
         with open(self._filepath, encoding="utf8") as f:
             for i in range(0, len(frames)):                
                 output_metadata[i] = [0] * len(self._meta_list)
@@ -537,8 +540,9 @@ class SpeReference():
                         metadata_offset += int((self._meta_list[j-1].bit_depth) / 8)
                     meta_length = np.dtype(self._meta_list[j].datatype).itemsize // int((self._meta_list[j-1].bit_depth) / 8)
                     output_metadata[i][j] = np.fromfile(f, dtype=self._meta_list[j].datatype, count=meta_length, offset=int(4100+metadata_offset))[0]
-                    if type(self._meta_list[j]) == TimeStamp:
-                        output_metadata[i][j] = (output_metadata[i][j] / self._meta_list[j].resolution) * 1000
+                    tmp = self._meta_list[j]
+                    if type(tmp) == TimeStamp:
+                        output_metadata[i][j] = (output_metadata[i][j] / tmp.resolution) * 1000
         return output_metadata
 
 
@@ -556,8 +560,10 @@ class Fits():
             if region.height < 1 or region.width < 1:
                 raise ValueError('One or more region(s) of the spe file do not have valid data.')
         if spe_ref._spe_version >= 3:
+            assert(type(spe_ref._pixel_format_string) == str)
             datatype: np.dtype = spe_ref._dataTypes[spe_ref._pixel_format_string]
         else:
+            assert(type(spe_ref._pixel_format_string) == int)
             datatype: np.dtype = spe_ref._dataTypes_old_spe[spe_ref._pixel_format_string]
         from astropy.io import fits
         for i in range(0, len(spe_ref._roi_list)):
@@ -585,8 +591,10 @@ class Fits():
             if region.height < 1 or region.width < 1:
                 raise ValueError('One or more region(s) of the spe file do not have valid data.')
         if spe_ref._spe_version >= 3:
+            assert(type(spe_ref._pixel_format_string) == str)
             datatype: np.dtype = spe_ref._dataTypes[spe_ref._pixel_format_string]
         else:
+            assert(type(spe_ref._pixel_format_string) == int)
             datatype: np.dtype = spe_ref._dataTypes_old_spe[spe_ref._pixel_format_string]
         from astropy.io import fits
         new_folder_path = '%s\\%s-fits\\'%(spe_ref._file_directory, spe_ref._file_name)

@@ -9,7 +9,7 @@ from readSpe import (
     SpeReference,
     TimeStamp,
     FrameTrackingNumber,
-    GateTrackimg
+    GateTracking
 )
 import numpy as np
 import tkinter as tk
@@ -290,7 +290,7 @@ def print_metadata(spe_file: SpeReference, frame_number: int) -> None:
                  print('%s:\t%0.3f ms'%(meta.meta_event, meta_value))
             if type(meta) == FrameTrackingNumber:
                 print('%s:\t%04d'%(meta.meta_event, meta_value))
-            if type(meta) == GateTrackimg:
+            if type(meta) == GateTracking:
                  print('%s:\t%0.3f ns'%(meta.meta_event, meta_value))
             count += 1
 #helper to get FWHM of a line section
@@ -404,9 +404,9 @@ def GetStats(data, x1, x2, y1, y2):
 def box_select_callback(eclick, erelease, spe_state: SpeState, region: RegionImageState):
     x1, y1 = int(np.floor(eclick.xdata)), int(np.floor(eclick.ydata))
     x2, y2 = int(np.floor(erelease.xdata)), int(np.floor(erelease.ydata))
-    if x2-x1 >= 10 and y2-y1 >= 10:
-        if not region.pixel_axis and len(region.region_wavelengths) > 0:
-            x1, x2 = findXPixels(region.region_wavelengths, x1, x2)
+    if not region.pixel_axis and any(region.region_wavelengths):
+        x1, x2 = findXPixels(region.region_wavelengths, x1, x2)
+    if x2-x1 >= 3 and y2-y1 >= 3:
         data = np.array(region.ax.get_images().pop()._A)
         centerRow = np.int32(np.floor(np.shape(data)[0]/2))
         mean, dev, regMin, regMax = GetStats(data,x1,x2,y1,y2)
