@@ -82,6 +82,7 @@ class AutoClass:
         self.auto = Automation(True, clArgs)
         self.experiment = self.auto.LightFieldApplication.Experiment
         self.fileManager = self.auto.LightFieldApplication.FileManager
+        self.experiment.ExperimentCompleted += self.acquire_complete
         
     def GetCurrentROIs(self):
         self.ROIs = np.array([],dtype=np.uint32)
@@ -156,7 +157,19 @@ class AutoClass:
 
     def ReportCounter(self):
         return self.counter        
-            
+    
+    def read_camera_temperature(self) -> np.float64:
+        '''Probe temperature from camera, return as numpy float'''
+        sensor_temperature = self.experiment.GetValue(\
+            CameraSettings.SensorTemperatureReading)
+        return np.float64(sensor_temperature)
+    def acquire_with_wait(self) -> None:
+        '''Call Acquire and set the calling thread to block until the
+        acquisition is complete.
+        '''
+        if self.experiment.IsReadyToRun:
+            self.experiment.Acquire()
+            self.acquireCompleted.WaitOne()                  
     def CloseInstance(self):
         try:
             self.experiment.ExperimentCompleted -= self.acquire_complete
