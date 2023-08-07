@@ -59,7 +59,8 @@ def acquire_loop(automation: ac, timestamp: float) -> None:
 
 if __name__=='__main__':
     lf = ac()
-    #set up automation instance
+    #set up automation instance - you will want to replace my path with a
+    #proper path to your desired experiment.
     lf.NewInstance(expPath=\
         'C:\\Users\\sliakat\\Documents\\LightField\\Experiments\\'\
         'AutomationTest-EM.lfe')
