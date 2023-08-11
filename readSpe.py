@@ -332,8 +332,7 @@ class SpeReference():
         if self._spe_version >= 3:           
             regionOffset=0
             with open(self._filepath, encoding="utf8") as f:
-                assert(type(self._pixel_format_string) == str)            
-                bpp = np.dtype(self._dataTypes[self._pixel_format_string]).itemsize            
+                bpp = np.dtype(self._dataTypes[str(self._pixel_format_string)]).itemsize            
                 for i in range(0,len(rois)):                
                     regionData = np.zeros([len(frames),self._roi_list[rois[i]].height, self._roi_list[rois[i]].width])
                     regionOffset = 0                
@@ -351,7 +350,6 @@ class SpeReference():
             if len(rois) != 1 and rois[0] !=0:
                 raise ValueError('Only one ROI allowed for spe v2 parsing.')
             with open(self._filepath, encoding="utf8") as f:
-                assert(type(self._pixel_format_string) == int)
                 bpp = np.dtype(self._dataTypes_old_spe[self._pixel_format_string]).itemsize
                 regionData = np.zeros([len(frames), self._roi_list[0].height, self._roi_list[0].width], dtype=self._dataTypes_old_spe[self._pixel_format_string])     
                 for j in range(0,len(frames)):
