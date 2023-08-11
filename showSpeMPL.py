@@ -350,7 +350,7 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
         # colorMap = 'gray'
         # if bg==False:
         #     colorMap = GenCustomCmap(flatData,bits)
-        if len(wave) > 10 and pixAxis==False:
+        if len(wave) > 10 and pixAxis is False and np.min(pixAxis) != np.max(pixAxis):
             waveRange = (wave[-1] - wave[0])
             # if waveRange < 50:
             #     aspect = waveRange/np.size(data,0)
