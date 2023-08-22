@@ -21,6 +21,7 @@ public:
         id_ = new PicamCameraID;
         camera_ = new PicamHandle;
         error_ = 0;
+        counter_ = 0;
     }
     void operator()(ArgumentList outputs, ArgumentList inputs){
         ArrayFactory factoryObject;
@@ -30,8 +31,8 @@ public:
         if (inputs.size() == 2)
         {
             debug_ = true;              
-        }
-        WriteString("Read input");
+        }        
+        //WriteString("Read input");
         switch(inputInt){
             case 0: InitAndOpen();
                     break;
@@ -55,19 +56,30 @@ public:
             //TypedArray<pi16u> outputData = factoryObject.createArray<pi16u>({1, imageData16_.size()},imageData16_.data(),imageData16_.data()+imageData16_.size());
             TypedArray<pi16u> outputData = factoryObject.createArray<pi16u>({(pi16u)rows_,(pi16u)cols_},imageData16_.data(),imageData16_.data()+imageData16_.size());
             outputs[1] = outputData;
-            WriteString("Outputs[1] succeeded.");
+            counter_++;
+            if (inputInt < 2)
+            {
+            _snprintf_s(temp, 128, "Acquisition iteration %d succeeded, Outputs[1] generated.", counter_);
+            WriteString(temp);
+            }
         }
         else
         {
-            char temp[128];
-            _snprintf_s(temp, 128, "Region Length %d, failed check. Outputting 0.", regionLength);
-            WriteString(temp);
-            TypedArray<int> failedOutput = factoryObject.createScalar<int>(0);
-            outputs[1] = failedOutput;
+            if (inputInt > 0)
+            {
+                char temp[128];
+                _snprintf_s(temp, 128, "Region Length %d, failed check. Outputting 0.", regionLength);
+                WriteString(temp);
+                TypedArray<int> failedOutput = factoryObject.createScalar<int>(0);
+                outputs[1] = failedOutput;
+            }
+            
         }
+        WriteString("*************************************\n");
     }
     void InitAndOpen()
     {
+        WriteString("*************************************\nNEW ACQUISITION RUN\n*************************************");
         Picam_InitializeLibrary();
         WriteString("Initialized.");
         error_ = Picam_OpenFirstCamera(camera_);
@@ -109,7 +121,7 @@ public:
             WriteString("Successfully cast.");
             std::vector<pi16u> imageData16(framePtr, framePtr + (readCount * (readoutStride_ / 2)));
             WriteString("Created vector.");
-			imageData16_ = imageData16;
+			imageData16_ = imageData16;            
         }
     }
     
@@ -131,13 +143,17 @@ public:
 			}
 		}
         error_ = Picam_CloseCamera(*camera_);
+        WriteString("Closed Camera.");
         Picam_UninitializeLibrary();
+        WriteString("Uninitialized library.");        
+    }
+    //destructor to clean up and reset state for next operation
+    ~MexFunction(){
+        WriteString("Inside Destructor.");
+        CloseAndExit();
         delete id_;
         delete camera_;
-    }
-    //destructor to close the camera and uninitialize PICam if something happens to the MATLAB connection.
-    ~MexFunction(){
-        CloseAndExit();
+        WriteString("Deleted handles.");
     }
     void GetXandY()
     {
@@ -168,6 +184,7 @@ private:
     char string_[128];
     bool debug_;
     int error_;
+    int counter_;
     
     //writes only if debug_ is set to True
     void WriteString(char* src)
