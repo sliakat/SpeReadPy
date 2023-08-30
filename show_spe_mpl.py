@@ -5,28 +5,28 @@ Created on Wed Feb  9 16:03:10 2022
 @author: sliakat
 """
 
-from read_spe import (
-    SpeReference,
-    TimeStamp,
-    FrameTrackingNumber,
-    GateTracking
-)
-import numpy as np
+from typing import Any
+from collections.abc import Sequence
 import tkinter as tk
 from tkinter import filedialog
+import xml.etree.ElementTree as ET
+import warnings
+import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.widgets import RectangleSelector, SpanSelector, Slider
-import xml.etree.ElementTree as ET
-import xml.dom.minidom as dom
-import warnings
 from scipy import interpolate
 from matplotlib import cm
 from matplotlib.colors import ListedColormap
-from typing import Any
-from collections.abc import Sequence
+from read_spe import (SpeReference, TimeStamp, FrameTrackingNumber,
+    GateTracking)
 
 class Region():
-    def __init__(self, x: int=-1, y: int=-1, og_width: int=0, og_height: int=0, width: int=0, height:int=0, x_bin: int=0, y_bin: int=0) -> None:
+    '''Contains information for a data region to allow for processing.
+    Information includes height, width, and origin x/y position.
+    '''
+    def __init__(self, x: int=-1, y: int=-1, og_width: int=0,
+                 og_height: int=0, width: int=0, height:int=0,
+                 x_bin: int=0, y_bin: int=0) -> None:
         self._x = x
         self._y = y
         self._og_width = og_width
@@ -37,54 +37,65 @@ class Region():
         self._y_bin = y_bin
     @property
     def x(self) -> int:
+        '''x position (upper-left, 0-indexed)'''
         return self._x
     @x.setter
     def x(self, val):
         self._x = val
     @property
     def y(self) -> int:
+        '''y position (upper-left, 0-indexed)'''
         return self._y
     @y.setter
     def y(self, val):
         self._y = val
     @property
     def og_width(self) -> int:
+        '''width of the region before binning is considered'''
         return self._og_width
     @og_width.setter
     def og_width(self, val):
         self._og_width = val
     @property
     def og_height(self) -> int:
+        '''height of the region before binning is considered'''
         return self._og_height
     @og_height.setter
     def og_height(self, val):
         self._og_height = val
     @property
     def width(self) -> int:
+        '''width of the region after binning is considered'''
         return self._width
     @width.setter
     def width(self, val):
         self._width = val
     @property
     def height(self) -> int:
+        '''height of the region after binning is considered'''
         return self._height
     @height.setter
     def height(self, val):
         self._height = val
     @property
     def x_bin(self) -> int:
+        '''binned columns'''
         return self._x_bin
     @x_bin.setter
     def x_bin(self, val):
         self._x_bin = val
     @property
     def y_bin(self) -> int:
+        'binned rows'
         return self._y_bin
     @y_bin.setter
     def y_bin(self, val):
         self._y_bin = val
 
 class Rectangle():
+    '''Coordinate information for a rectangle, to be used to process user-
+    selected boxes on the image plots.
+    '''
     def __init__(self, x_left: int=-1, x_right: int=-1, y_top: int=-1, y_bottom: int=-1) -> None:
         self._x_left = x_left
         self._x_right = x_right
@@ -281,16 +292,17 @@ def update_frame(val, spe_state: SpeState, region: RegionImageState):
     print_metadata(spe_state.spe_file, region.current_frame)
     
 def print_metadata(spe_file: SpeReference, frame_number: int) -> None:
-    if len(spe_file._meta_list) > 0:
-        print('Metadata for %s, frame %d:'%(spe_file._file_name, frame_number))
+    '''Prints metadata event name and value on request.'''
+    if len(spe_file.meta_list) > 0:
+        print('Metadata for %s, frame %d:'%(spe_file.file_name, frame_number))
         count = 0
-        for meta in spe_file._meta_list:
-            meta_value = spe_file._frame_metadata_values[frame_number-1][count]
-            if type(meta) == TimeStamp:
+        for meta in spe_file.meta_list:
+            meta_value = spe_file.frame_metadata_values[frame_number-1][count]
+            if isinstance(meta, TimeStamp):
                  print('%s:\t%0.3f ms'%(meta.meta_event, meta_value))
-            if type(meta) == FrameTrackingNumber:
+            if isinstance(meta, FrameTrackingNumber):
                 print('%s:\t%04d'%(meta.meta_event, meta_value))
-            if type(meta) == GateTracking:
+            if isinstance(meta, GateTracking):
                  print('%s:\t%0.3f ns'%(meta.meta_event, meta_value))
             count += 1
 #helper to get FWHM of a line section
@@ -469,7 +481,7 @@ def FindXmlElems(xmlStr, stringList):
                     print('%s:\t\t%s\t\t%s'%(tagSplit, elem.attrib, elem.text))
         print('\n\n')
         
-def PrintSelectedXmlEntries(xmlStr):
+def print_selected_xml_entries(xmlStr):
     global bits, bg    
     if len(xmlStr)>50:
         xmlRoot = ET.fromstring(xmlStr)
@@ -748,9 +760,9 @@ def StopPrompt():
     print('Press Enter to end script')
     input()
 
-if __name__=="__main__":  
+if __name__=="__main__":
     warnings.filterwarnings("ignore")
-    
+
     #font sizes (global)
     fontTitle = 36
     fontLabels = 24
@@ -758,45 +770,59 @@ if __name__=="__main__":
 
     #global
     spe_state_objects: list[SpeState] = []
-    pixel_axis = False #if True, then x-axis is displayed as pixel even if calibration exists
+    pixel_axis = False #if True, then x-axis is displayed
+    # as pixel even if calibration exists
     autocontrast = True
     bg = False
-    
+
     #use tk for file dialog
     root = tk.Tk()
-    filenames = filedialog.askopenfilenames(title='Select Spe Files',filetypes=[('spe files','*.spe'),('spe files','*.SPE')])
+    filenames = filedialog.askopenfilenames(
+        title='Select Spe Files',filetypes=[
+        ('spe files','*.spe'),('spe files','*.SPE')])
     root.withdraw()
 
     #makes figures spawn in individual threads
     plt.ion()
-    
-    for i in range(len(filenames)): #originally intended to open multiple files in one kernel, but slider doesn't seem to connect to multiple figs.
-                                    #for comparison of multiple images, open each in separate kernel
-        spe_state_objects.append(SpeState(filenames[i]))
-        print('**Information for %s%s**'%(spe_state_objects[i].spe_file._file_name, spe_state_objects[i].spe_file._file_extension))
-        xmlTotal = spe_state_objects[i].spe_file._xml_footer
-        xmlFormat = ''
+
+    for idx_filename, filename in enumerate(filenames):
+        spe_state_objects.append(SpeState(filename))        
+        current_spe = spe_state_objects[idx_filename].spe_file
+        print('**Information for %s%s**'
+              %(current_spe.file_name, current_spe.file_extension))
+        xml_total = current_spe._xml_footer
         bits = None
         try:
-            xmlFormat = dom.parseString(xmlTotal).toprettyxml()
-            PrintSelectedXmlEntries(xmlTotal)
-            print('%d region(s):'%(len(spe_state_objects[i].spe_file._roi_list)))
+            xml_format = current_spe.xml_footer_pretty_print
+            print_selected_xml_entries(xml_total)
+            print('%d region(s):'%(len(current_spe.roi_list)))
         except:
-            if spe_state_objects[i].spe_file._spe_version < 3:
-                print('spe file version %0.1f does not have an xml footer. Only first ROI is displayed for this spe file version.'%(spe_state_objects[i].spe_file._spe_version))
+            if current_spe.spe_version < 3:
+                print('spe file version %0.1f does not have an xml footer.'
+                    ' Only first ROI is displayed for this spe file version.'
+                    %(current_spe.spe_version))
             else:
                 print('xml could not be formatted and/ or parsed')
         if bits == None:
-            bits = 16 #assume 16 bit data for legacy spe files or files that don't have it in the xml content. this may or may not be true -- please alert if issue discovered.
-        for j in range(0,spe_state_objects[i].num_regions):
-            print('\tROI %02d: %d x %d, xbin %d, ybin %d'%(j+1, spe_state_objects[i].region_list[j].region.width, spe_state_objects[i].region_list[j].region.height, spe_state_objects[i].region_list[j].region.x_bin, spe_state_objects[i].region_list[j].region.y_bin))
-            spe_state_objects[i].region_list[j].fig = plt.figure('%s, ROI %02d'%(spe_state_objects[i].spe_file._file_name, j+1))
-            spe_state_objects[i].region_list[j].region_wavelengths = spe_state_objects[i].spe_file.get_wavelengths(rois=[j])
-            spe_state_objects[i].region_list[j].ax = spe_state_objects[i].region_list[j].fig.add_subplot(111)
-            spe_state_objects[i].region_list[j].generate_mpl_widgets(spe_state_objects[i])
-            spe_state_objects[i].region_list[j].pixel_axis = pixel_axis
-            spe_state_objects[i].region_list[j].autocontrast = autocontrast
-            plotData(spe_state_objects[i].spe_file.get_data(frames=[0], rois=[j])[0][0], spe_state_objects[i].region_list[j].ax, spe_state_objects[i].region_list[j].region_wavelengths, '%s, ROI %02d'%(spe_state_objects[i].spe_file._file_name, j+1), pixAxis=pixel_axis)
-            print_metadata(spe_state_objects[i].spe_file, spe_state_objects[i].region_list[j].current_frame)
+            bits = 16 #assume 16 bit data for legacy spe files or
+            # files that don't have it in the xml content.
+            # this may or may not be true -- please alert if issue discovered.
+        for idx_rgn, rgn in enumerate(
+            spe_state_objects[idx_filename].region_list):
+            print('\tROI %02d: %d x %d, xbin %d, ybin %d'
+                %(idx_rgn+1, rgn.region.width, rgn.region.height,
+                  rgn.region.x_bin, rgn.region.y_bin))
+            rgn.fig = plt.figure('%s, ROI %02d'%
+                (current_spe.file_name, idx_rgn+1))
+            rgn.region_wavelengths = current_spe.get_wavelengths(
+                rois=[idx_rgn])
+            rgn.ax = rgn.fig.add_subplot(111)
+            rgn.generate_mpl_widgets(spe_state_objects[idx_filename])
+            rgn.pixel_axis = pixel_axis
+            rgn.autocontrast = autocontrast
+            plotData(current_spe.get_data(frames=[0], rois=[idx_rgn])[0][0],
+                rgn.ax, rgn.region_wavelengths, '%s, ROI %02d'%
+                (current_spe.file_name, idx_rgn+1), pixAxis=pixel_axis)
+            print_metadata(current_spe, rgn.current_frame)
         print('\n')
     StopPrompt()
