@@ -2,7 +2,7 @@
 test script for generating fits files with static Fits method(s) in
 readSpe.py
 '''
-from readSpe import(
+from read_spe import(
     SpeReference,
     Fits
 )
@@ -25,5 +25,5 @@ if __name__ == "__main__":
     spe_files = MultiFileSelect(title='select spe file(s)', filter=[('LightField Data','*.spe')])
     for file in spe_files:
         spe = SpeReference(file)
-        Fits.GenerateFitsFiles(spe)
+        Fits.generate_fits_files(spe)
         #fits files should be created
