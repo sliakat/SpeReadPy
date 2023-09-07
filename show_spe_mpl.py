@@ -332,11 +332,11 @@ def FWHM(data):  #pass in a line (1D array)
 
 def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=-1, xBound2: int=-1, yBound1: int=-1, yBound2: int=-1):     #pass in frame
     global bits, bg, fontTitle, fontLabels  
-    flatData = data.flatten()
+    flatData = data.ravel()
     #image contrast adjustments
-    if xBound1 > 0 and xBound2 > 10 and yBound1 > 0 and yBound2 > 10:
-            display_min = int(np.percentile(data[yBound1:yBound2,xBound1:xBound2].flatten(),5))
-            display_max = int(np.percentile(data[yBound1:yBound2,xBound1:xBound2].flatten(),95))
+    if (xBound2 - xBound1 > 2) and (yBound2 -yBound1 > 2):
+            display_min = int(np.percentile(data[yBound1:yBound2,xBound1:xBound2].ravel(),5))
+            display_max = int(np.percentile(data[yBound1:yBound2,xBound1:xBound2].ravel(),95))
     else:
         display_min = int(np.percentile(flatData,5))
         display_max = int(np.percentile(flatData,95))
@@ -344,12 +344,12 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
         display_min = 1
     if display_max <1:
         display_max = 1 
-        
+
     ax.clear()
     #plotting
     if np.size(data,0)==1:
         ax.grid()
-        if len(wave) > 0 and pixAxis==False:
+        if len(wave) > 0 and pixAxis is False:
             ax.plot(wave,data[0])
             ax.set_xlabel('Wavelength (nm)',fontsize=fontLabels)
             ax.set(xlim=(wave[0],wave[-1]))
@@ -363,13 +363,7 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
         # if bg==False:
         #     colorMap = GenCustomCmap(flatData,bits)
         if len(wave) > 0 and pixAxis is False and np.min(wave) != np.max(wave):
-            waveRange = (wave[-1] - wave[0])
-            # if waveRange < 50:
-            #     aspect = waveRange/np.size(data,0)
-            # else:
-            #     aspect = 0.25
-            aspect = (waveRange/np.size(data,0))/1.75
-            ax.imshow(data,vmin=display_min,vmax=display_max,cmap='gray',extent=[wave[0],wave[-1],np.size(data,0),0],aspect=aspect)
+            ax.imshow(data,vmin=display_min,vmax=display_max,cmap='gray',extent=[wave[0],wave[-1],np.size(data,0),0],aspect=1)
             ax.set_xlabel('Wavelength (nm)',fontsize=fontLabels)
         else:
             ax.imshow(data,origin='upper',vmin=display_min,vmax=display_max,cmap='gray')
