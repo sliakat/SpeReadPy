@@ -3,14 +3,171 @@
 #include "picam.h"
 #include <stdio.h>
 
-//inputs will be integers:
+//Example cpp script using MATLAB's c++ API to integrate PICam
+// with MATLAB to allow a user to repeatedly loop acquisitions
+// and have access to the data in MATLAB.
+
+//These will be defined as the main functions. Inputs will be integers:
 //0: initialize and open
 //1: acquire 1 frame and output data array to MATLAB
 //2: close and uninitialize
 
+//additional numeric inputs from parameter 3 onwards for
+// some main functions.
+
+//acq parameter map (param 3 in function 1):
+// #3: exposure time (in ms)
+
 using namespace matlab::data;
 using matlab::mex::ArgumentList;
 using matlab::data::ArrayFactory;
+using matlab::data::ArrayType;
+using matlab::engine::MATLABEngine;
+
+//stores the camera parameter values that can be modified
+class CameraSettings{
+    public:
+        enum ExposureTimeUnit{
+            NONE,
+            MS,
+            NS    
+        };
+        piflt exposure_time;
+        ExposureTimeUnit exposure_time_unit;      
+        piint shutter_mode;
+        
+        CameraSettings()
+        {
+            exposure_time = -1;
+            shutter_mode = PicamShutterTimingMode_Normal;
+        }
+
+        CameraSettings(PicamHandle camera)
+        {
+            _camera = camera;
+            UpdateExposureTime();
+            UpdateShutterMode();
+        }
+
+        //getters
+
+        /*
+        in this design, if exposure time doesn't exist, we check for gate width (ICCD)
+        and treat that as an exposure time.
+        if neither exposure time nor repetitive gate exist / are relevant,
+        then defaults to -1 for exposure time and unit None
+        */
+        void UpdateExposureTime()
+        {
+            if (IsParameterValid(PicamParameter_ExposureTime))
+            {
+                Picam_GetParameterFloatingPointValue(_camera, PicamParameter_ExposureTime, &exposure_time);
+                exposure_time_unit = ExposureTimeUnit::MS;
+            }
+            else if (IsParameterValid(PicamParameter_RepetitiveGate))
+            {
+                const PicamPulse* pulse;
+                Picam_GetParameterPulseValue(_camera, PicamParameter_RepetitiveGate, &pulse);
+                exposure_time = pulse->width;
+                exposure_time_unit = ExposureTimeUnit::NS;
+                Picam_DestroyPulses(pulse);
+            }
+            else
+                exposure_time = -1;
+                exposure_time_unit = ExposureTimeUnit::NONE;
+        }
+
+        void UpdateShutterMode()
+        {
+            if (IsParameterValid(PicamParameter_ShutterTimingMode))
+            {
+                Picam_GetParameterIntegerValue(_camera, PicamParameter_ShutterTimingMode, &shutter_mode);
+            }
+        }
+
+        //setters
+        bool SetExposureTime(piflt exposure_time)
+        {
+            if (IsParameterValid(PicamParameter_ExposureTime))
+            {
+                if (!Picam_SetParameterFloatingPointValue(_camera, PicamParameter_ExposureTime, exposure_time))
+                {
+                    if (CommitParameters())
+                    {
+                        UpdateExposureTime();
+                        return true;
+                    }
+                }
+            }
+            if (IsParameterValid(PicamParameter_RepetitiveGate))
+            {
+                const PicamPulse* oldPulse;
+                // need to get the old delay to put into new pulse
+                Picam_GetParameterPulseValue(_camera, PicamParameter_RepetitiveGate, &oldPulse);
+                piflt old_delay = oldPulse->delay;
+                Picam_DestroyPulses(oldPulse);
+                PicamPulse* newGate = new PicamPulse;
+                newGate->delay = old_delay;
+                newGate->width = exposure_time;
+                if (!Picam_SetParameterPulseValue(_camera, PicamParameter_RepetitiveGate, newGate))
+                {
+                    Picam_DestroyPulses(newGate);
+                    if (CommitParameters())
+                    {
+                        UpdateExposureTime();
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        bool SetShutterMode(PicamShutterTimingMode mode)
+        {
+            if (IsParameterValid(PicamParameter_ShutterTimingMode))
+            {
+                Picam_SetParameterIntegerValue(_camera, PicamParameter_ShutterTimingMode, mode);
+                if (CommitParameters())
+                {
+                    UpdateShutterMode();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+    private:
+        PicamHandle _camera;
+        
+        // check to see if the input parameter exists and is relevant
+        bool IsParameterValid(PicamParameter param)
+        {
+            pibln exists;
+            pibln isRelevant;
+            Picam_DoesParameterExist(_camera, param, &exists);
+            Picam_IsParameterRelevant(_camera, param, &isRelevant);
+            return (exists && isRelevant);
+        }
+
+        //try and commit parameters. Returns true on success.
+        // Success means there are no errors on the Commit call and
+        // there are no failed parameters.
+        bool CommitParameters()
+        {
+            const PicamParameter* failed_parameter_array;
+            piint failed_parameter_count;
+            if (!Picam_CommitParameters(_camera, &failed_parameter_array, &failed_parameter_count))
+            {
+                Picam_DestroyParameters(failed_parameter_array);
+                if (failed_parameter_count == 0)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+};
 
 class MexFunction : public matlab::mex::Function{
 public:
@@ -24,11 +181,12 @@ public:
         counter_ = 0;
     }
     void operator()(ArgumentList outputs, ArgumentList inputs){
-        ArrayFactory factoryObject;
+        ArrayFactory factoryObject;        
+        CheckArguments(outputs, inputs);
         const int inputInt = inputs[0][0];
         debug_ = false;
         //inputting anything as a second arg will turn on debug
-        if (inputs.size() == 2)
+        if (inputs.size() >= 2)
         {
             debug_ = true;              
         }        
@@ -36,7 +194,15 @@ public:
         switch(inputInt){
             case 0: InitAndOpen();
                     break;
-            case 1: AcquireSingle();
+            case 1: if (inputs.size() >= 3)
+                        {
+                            double desiredExposure = factoryObject.createScalar<double>(inputs[2][0])[0];
+                            if (!camSettings_.SetExposureTime(desiredExposure))
+                            {
+                                WriteString("Unable to set the exposure time. Continuing with the original settings.");
+                            }
+                        }
+                    AcquireSingle();
                     break;
             case 2: CloseAndExit();
                     break;
@@ -73,10 +239,35 @@ public:
                 TypedArray<int> failedOutput = factoryObject.createScalar<int>(0);
                 outputs[1] = failedOutput;
             }
-            
         }
         WriteString("*************************************\n");
     }
+
+    //basic sanity check on inputs
+    void CheckArguments(ArgumentList outputs, ArgumentList inputs)
+    {
+        debug_ = true;
+        std::shared_ptr<MATLABEngine> matlabPtr = getEngine();
+        ArrayFactory factoryObject;
+
+        //first check: there must be inputs
+        if (inputs.size() < 1){
+            matlabPtr->feval(u"error", 0,
+            std::vector<Array>({ factoryObject.createScalar
+            ("Mex function call has no inputs. See documentation in cpp file.") }));
+        }
+        //next, make sure the inputs are all scalar
+        for (int i = 0; i < inputs.size(); i++)
+        {            
+            if (inputs[i].getNumberOfElements() != 1)
+                {
+                    matlabPtr->feval(u"error", 0,
+                    std::vector<Array>({ factoryObject.createScalar
+                    ("All inputs must be scalars.") }));
+                }
+        }
+    }
+
     void InitAndOpen()
     {
         WriteString("*************************************\nNEW ACQUISITION RUN\n*************************************");
@@ -88,8 +279,15 @@ public:
         WriteString("Got ID.");
         Picam_GetParameterFloatingPointValue(*camera_, PicamParameter_ReadoutRateCalculation, &readRate_);
         char temp[128];
-        _snprintf_s(temp, 128, "Read Rate: %0.3f", readRate_);
+        _snprintf_s(temp, 128, "Read Rate: %0.3f fps", readRate_);
         WriteString(temp);
+        camSettings_ = CameraSettings(*camera_);
+        //shutter mode to Always Open; this is specific implementation for a user request, edit / remove
+        // if not applicable
+        if (!camSettings_.SetShutterMode(PicamShutterTimingMode_AlwaysOpen))
+        {
+            WriteString("Shutter could not be set to Always Open. Continuing with original settings.");
+        }
     }
     void AcquireSingle()
     {        
@@ -104,6 +302,9 @@ public:
         {
             timeout_ = 3000;
         }
+        camSettings_.UpdateExposureTime();
+        _snprintf_s(temp, 128, "Current Exposure time (ms if CCD, ns if gate width): %0.3f", camSettings_.exposure_time);
+        WriteString(temp);
         WriteString("Before Acquire.");
         error_ = Picam_Acquire(*camera_, 1, timeout_, &data, &errors);
         WriteString("After Acquire.");        
@@ -124,7 +325,7 @@ public:
 			imageData16_ = imageData16;            
         }
     }
-    
+
     //this is the cleanup
     void CloseAndExit()
     {
@@ -174,6 +375,7 @@ public:
 private:
     PicamHandle* camera_;
     PicamCameraID* id_;
+    CameraSettings camSettings_;
     double readRate_;
     int readoutStride_;
     std::vector<pi16u> imageData16_;
