@@ -362,11 +362,14 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
         # colorMap = 'gray'
         # if bg==False:
         #     colorMap = GenCustomCmap(flatData,bits)
+        # aspect factor (to match original 1 w/ pixel axis):
+        # new X / old X
         if len(wave) > 0 and pixAxis is False and np.min(wave) != np.max(wave):
-            ax.imshow(data,vmin=display_min,vmax=display_max,cmap='gray',extent=[wave[0],wave[-1],np.size(data,0),0],aspect=1)
+            ax.imshow(data,vmin=display_min,vmax=display_max,cmap='gray',extent=[wave[0],wave[-1],np.size(data,0),0],
+                aspect=(wave[-1]-wave[0]) / data.shape[1])
             ax.set_xlabel('Wavelength (nm)',fontsize=fontLabels)
         else:
-            ax.imshow(data,origin='upper',vmin=display_min,vmax=display_max,cmap='gray')
+            ax.imshow(data,origin='upper',vmin=display_min,vmax=display_max,cmap='gray', aspect=1)
             ax.set_xlabel('Column',fontsize=fontLabels)
         ax.set_ylabel('Row',fontsize=fontLabels)
         if bg==False:
