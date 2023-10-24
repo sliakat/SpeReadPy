@@ -293,7 +293,12 @@ public:
     {        
         PicamAvailableData data;
         PicamAcquisitionErrorsMask errors;
-        char temp[128];
+        char temp[128];        
+        camSettings_.UpdateExposureTime();
+        _snprintf_s(temp, 128, "Current Exposure time (ms if CCD, ns if gate width): %0.3f", camSettings_.exposure_time);
+        WriteString(temp);
+        Picam_GetParameterFloatingPointValue(*camera_, PicamParameter_ReadoutRateCalculation, &readRate_);
+        _snprintf_s(temp, 128, "Read Rate: %0.3f fps", readRate_);
         //give acquire a timeout of 2x readout rate, or 3 secs, whichever is larger
         //having a timeout error returned can give the user a means to "reset" in the main app
         double expectedFrameTime = (1 / readRate_);
@@ -302,8 +307,6 @@ public:
         {
             timeout_ = 3000;
         }
-        camSettings_.UpdateExposureTime();
-        _snprintf_s(temp, 128, "Current Exposure time (ms if CCD, ns if gate width): %0.3f", camSettings_.exposure_time);
         WriteString(temp);
         WriteString("Before Acquire.");
         error_ = Picam_Acquire(*camera_, 1, timeout_, &data, &errors);
