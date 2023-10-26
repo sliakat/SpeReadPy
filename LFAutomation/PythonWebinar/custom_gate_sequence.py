@@ -40,6 +40,7 @@ import os
 import sys
 from threading import Event, Lock
 from types import TracebackType
+from warnings import warn
 
 import numpy as np
 import clr
@@ -294,6 +295,10 @@ class ICCDOperator():
         """
         try:
             frames_received = evt_args.ImageDataSet.Frames
+            if frames_received > 1:
+                warn(f'Multiple frames ({frames_received}) were received'
+                    ' in the callback. Delay step(s) were skipped.',
+                    category=RuntimeWarning)
             self._index_to_use.increment(amount=frames_received)
             if self._index_to_use.idx_to_use < len(self._delay_sequence):
                 self._experiment.SetValue(CameraSettings.GatingRepetitiveGate,
