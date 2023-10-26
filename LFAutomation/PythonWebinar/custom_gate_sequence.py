@@ -65,6 +65,7 @@ global_thread_event: Event = Event()
 def experiment_completed(sender: Any, evt_args: Any) -> None:
     """Fires when an asynchronous acquisition is completed."""
     global_thread_event.set()
+    print('Experiment completed!')
 
 class ICCDOperator():
     """Hub for the ICCD-focused LightField automation instance.
