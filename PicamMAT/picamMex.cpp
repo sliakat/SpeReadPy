@@ -15,13 +15,19 @@
 //additional numeric inputs from parameter 3 onwards for
 // some main functions.
 
-//acq parameter map (param 3 in function 1):
+//acq parameter map (param n in function 1):
 // #3: exposure time (in ms)
+// #4: shutter status (as int)
+//     - use enum defs per Picam.h
+//      - 1: Normal
+//      - 2: Always Closed
+//      - 3: Always Open
 
 using namespace matlab::data;
 using matlab::mex::ArgumentList;
 using matlab::data::ArrayFactory;
 using matlab::data::ArrayType;
+using matlab::data::Array;
 using matlab::engine::MATLABEngine;
 
 //stores the camera parameter values that can be modified
@@ -122,7 +128,7 @@ class CameraSettings{
             return false;
         }
 
-        bool SetShutterMode(PicamShutterTimingMode mode)
+        bool SetShutterMode(int mode)
         {
             if (IsParameterValid(PicamParameter_ShutterTimingMode))
             {
@@ -196,10 +202,17 @@ public:
                     break;
             case 1: if (inputs.size() >= 3)
                         {
+                            // param 3: exposure time
                             double desiredExposure = factoryObject.createScalar<double>(inputs[2][0])[0];
                             if (!camSettings_.SetExposureTime(desiredExposure))
                             {
                                 WriteString("Unable to set the exposure time. Continuing with the original settings.");
+                            }
+                            // param 4: shutter timing mode
+                            int desiredShutter = factoryObject.createScalar<double>(inputs[3][0])[0];
+                            if (!camSettings_.SetShutterMode(desiredShutter))
+                            {
+                                WriteString("Unable to set the shutter mode. Continuing with the original settings.");
                             }
                         }
                     AcquireSingle();
@@ -219,9 +232,10 @@ public:
             char temp[128];
             _snprintf_s(temp, 128, "Inside Region Loop, length: %d", regionLength);
             WriteString(temp);
-            //TypedArray<pi16u> outputData = factoryObject.createArray<pi16u>({1, imageData16_.size()},imageData16_.data(),imageData16_.data()+imageData16_.size());
-            TypedArray<pi16u> outputData = factoryObject.createArray<pi16u>({(pi16u)rows_,(pi16u)cols_},imageData16_.data(),imageData16_.data()+imageData16_.size());
-            outputs[1] = outputData;
+            TypedArray<pi16u> rawData = factoryObject.createArray<pi16u>({(pi16u)cols_,(pi16u)rows_},imageData16_.data(),imageData16_.data()+imageData16_.size());
+            std::vector<Array> args({rawData});
+            std::shared_ptr<MATLABEngine> matlabPtr = getEngine();
+            outputs[1] = matlabPtr->feval(u"transpose", args);
             counter_++;
             if (inputInt < 2)
             {
@@ -282,23 +296,18 @@ public:
         _snprintf_s(temp, 128, "Read Rate: %0.3f fps", readRate_);
         WriteString(temp);
         camSettings_ = CameraSettings(*camera_);
-        //shutter mode to Always Open; this is specific implementation for a user request, edit / remove
-        // if not applicable
-        if (!camSettings_.SetShutterMode(PicamShutterTimingMode_AlwaysOpen))
-        {
-            WriteString("Shutter could not be set to Always Open. Continuing with original settings.");
-        }
     }
     void AcquireSingle()
     {        
         PicamAvailableData data;
         PicamAcquisitionErrorsMask errors;
-        char temp[128];        
+        char temp[128];
         camSettings_.UpdateExposureTime();
         _snprintf_s(temp, 128, "Current Exposure time (ms if CCD, ns if gate width): %0.3f", camSettings_.exposure_time);
         WriteString(temp);
         Picam_GetParameterFloatingPointValue(*camera_, PicamParameter_ReadoutRateCalculation, &readRate_);
         _snprintf_s(temp, 128, "Read Rate: %0.3f fps", readRate_);
+        WriteString(temp);
         //give acquire a timeout of 2x readout rate, or 3 secs, whichever is larger
         //having a timeout error returned can give the user a means to "reset" in the main app
         double expectedFrameTime = (1 / readRate_);
@@ -307,7 +316,6 @@ public:
         {
             timeout_ = 3000;
         }
-        WriteString(temp);
         WriteString("Before Acquire.");
         error_ = Picam_Acquire(*camera_, 1, timeout_, &data, &errors);
         WriteString("After Acquire.");        
