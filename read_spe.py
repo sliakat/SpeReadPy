@@ -125,6 +125,16 @@ class _ROI():
     @ybin.setter
     def ybin(self, val: int):
         self._ybin = val
+    def __eq__(self, compare_to: type['_ROI']) -> bool:
+        if self.x == compare_to.x and\
+        self.y == compare_to.y and\
+        self.width == compare_to.width and\
+        self.height == compare_to.height and\
+        self.xbin == compare_to.xbin and\
+        self.ybin == compare_to.ybin:
+            return True
+        else:
+            return False
 
 #metadata objects
 class Metadata():
