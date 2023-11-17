@@ -22,6 +22,7 @@
 //      - 1: Normal
 //      - 2: Always Closed
 //      - 3: Always Open
+// #5: bin n center rows (0 for full frame roi set)
 
 using namespace matlab::data;
 using matlab::mex::ArgumentList;
@@ -41,11 +42,16 @@ class CameraSettings{
         piflt exposure_time;
         ExposureTimeUnit exposure_time_unit;      
         piint shutter_mode;
+        piflt adc_speed;
+        piint adc_ports_used;
+        piint adc_analog_gain;
+        piint adc_quality;
+        piint sensor_original_cols;
+        piint sensor_original_rows;
+        const PicamRois* set_rois;
         
         CameraSettings()
         {
-            exposure_time = -1;
-            shutter_mode = PicamShutterTimingMode_Normal;
         }
 
         CameraSettings(PicamHandle camera)
@@ -53,6 +59,18 @@ class CameraSettings{
             _camera = camera;
             UpdateExposureTime();
             UpdateShutterMode();
+            UpdateADCQuality();
+            UpdateADCSpeed();
+            UpdateAnalogGain();
+            UpdatePorts();
+            Picam_GetParameterIntegerValue(camera, PicamParameter_SensorActiveWidth, &sensor_original_cols);
+            Picam_GetParameterIntegerValue(camera, PicamParameter_SensorActiveHeight, &sensor_original_rows);
+            Picam_GetParameterRoisValue(camera, PicamParameter_Rois, &set_rois);
+        }
+
+        ~CameraSettings()
+        {
+            Picam_DestroyRois(set_rois);
         }
 
         //getters
@@ -91,6 +109,38 @@ class CameraSettings{
             }
         }
 
+        void UpdatePorts()
+        {
+            if (IsParameterValid(PicamParameter_ReadoutPortCount))
+            {
+                Picam_GetParameterIntegerValue(_camera, PicamParameter_ReadoutPortCount, &adc_ports_used);
+            }
+        }
+
+        void UpdateADCSpeed()
+        {
+            if (IsParameterValid(PicamParameter_AdcSpeed))
+            {
+                Picam_GetParameterFloatingPointValue(_camera, PicamParameter_AdcSpeed, &adc_speed);
+            }
+        }
+
+        void UpdateADCQuality()
+        {
+            if (IsParameterValid(PicamParameter_AdcQuality))
+            {
+                Picam_GetParameterIntegerValue(_camera, PicamParameter_AdcQuality, &adc_quality);
+            }
+        }
+
+        void UpdateAnalogGain()
+        {
+            if (IsParameterValid(PicamParameter_AdcAnalogGain))
+            {
+                Picam_GetParameterIntegerValue(_camera, PicamParameter_AdcAnalogGain, &adc_analog_gain);
+            }
+        }
+
         //setters
         bool SetExposureTime(piflt exposure_time)
         {
@@ -124,6 +174,8 @@ class CameraSettings{
                         return true;
                     }
                 }
+                else
+                    Picam_DestroyPulses(newGate);
             }
             return false;
         }
@@ -142,10 +194,116 @@ class CameraSettings{
             return false;
         }
 
-    private:
-        PicamHandle _camera;
-        
-        // check to see if the input parameter exists and is relevant
+        /*
+        Attempts to set camera parameters to achieve the lowest read noise.
+        This includes:
+        - Set to 1-port, if applicable.
+        - Checks for Low Noiae quality mode on the cameera. If the mode exists,
+        changes to Low Noise quality and then sets ADC speed to the slowest speed
+        in Low Noise.
+        - true is returned if LowNoise Quality can be set, false otherwise
+        */
+        bool SetLowReadNoise()
+        {
+            if (IsParameterValid(PicamParameter_ReadoutPortCount))
+            {
+                Picam_SetParameterIntegerValue(_camera, PicamParameter_ReadoutPortCount, 1);
+                if (CommitParameters())
+                    UpdatePorts();
+            }
+            if (IsParameterValid(PicamParameter_AdcQuality))
+            {
+                // use capable constraints to get all possible ADC Qualities and identify if LowNoise exists
+                if (SearchConstraints((piflt)PicamAdcQuality_LowNoise, PicamParameter_AdcQuality, PicamConstraintCategory_Capable))
+                {
+                    Picam_SetParameterIntegerValue(_camera, PicamParameter_AdcQuality, PicamAdcQuality_LowNoise);
+                    CommitParameters();
+                    UpdateADCQuality();
+                    if (IsParameterValid(PicamParameter_AdcSpeed))
+                    {
+                        // now find the min of the the required constraints
+                        const PicamCollectionConstraint* required;
+                        piflt slowestSpeed;
+                        Picam_GetParameterCollectionConstraint(_camera, PicamParameter_AdcSpeed,
+                        PicamConstraintCategory_Required, &required);
+                        slowestSpeed = MinFlt(required->values_array, required->values_count);
+                        Picam_DestroyCollectionConstraints(required);
+                        Picam_SetParameterFloatingPointValue(_camera, PicamParameter_AdcSpeed, slowestSpeed);
+                        CommitParameters();
+                        UpdateADCSpeed();
+                        // now set high gain, if relevant
+                        if (IsParameterValid(PicamParameter_AdcAnalogGain))
+                        {
+                            if (SearchConstraints((piflt)PicamAdcAnalogGain_High, PicamParameter_AdcAnalogGain, PicamConstraintCategory_Required))
+                            {
+                                Picam_SetParameterIntegerValue(_camera, PicamParameter_AdcAnalogGain, PicamAdcAnalogGain_High);
+                                CommitParameters();
+                                UpdateAnalogGain();
+                            }
+                        }
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /*
+        Attempts to set a center row bin of n center rows per the user's input.
+        An input of 0 or less will put the sensor in full frame mode, using the
+        original sensor height and width determined during object construction.
+        An input that is greater than the number of rows on the sensor will coerce
+        to a full vertical bin.
+        */
+       bool SetCenterBinRows(int numRows)
+       {
+            PicamRoi roi;
+            PicamRois rois;
+            if (numRows <= 0)
+            {
+                // full sensor image
+                roi.x = 0;
+                roi.width = sensor_original_cols;
+                roi.x_binning = 1;
+                roi.y = 0;
+                roi.height = sensor_original_rows;
+                roi.y_binning = 1;
+            }
+            else if (numRows > sensor_original_rows)
+            {
+                // full vertical bin
+                roi.x = 0;
+                roi.width = sensor_original_cols;
+                roi.x_binning = 1;
+                roi.y = 0;
+                roi.height = sensor_original_rows;
+                roi.y_binning = sensor_original_rows;
+            }
+            else
+            {
+                // y index will be (sensor_original_rows - numRows) // 2
+                int y = (int)((sensor_original_rows - numRows) / 2);
+                roi.x = 0;
+                roi.width = sensor_original_cols;
+                roi.x_binning = 1;
+                roi.y = y;
+                roi.height = numRows;
+                roi.y_binning = numRows;
+            }
+            rois.roi_array = &roi;
+            rois.roi_count = 1;
+            if (!Picam_SetParameterRoisValue(_camera, PicamParameter_Rois, &rois))
+            {
+                if (CommitParameters())
+                {
+                    Picam_GetParameterRoisValue(_camera, PicamParameter_Rois, &set_rois);
+                    return true;
+                }
+            }
+            return false;            
+       }
+
+       // check to see if the input parameter exists and is relevant
         bool IsParameterValid(PicamParameter param)
         {
             pibln exists;
@@ -155,7 +313,10 @@ class CameraSettings{
             return (exists && isRelevant);
         }
 
-        //try and commit parameters. Returns true on success.
+    private:
+        PicamHandle _camera;  
+
+        // try and commit parameters. Returns true on success.
         // Success means there are no errors on the Commit call and
         // there are no failed parameters.
         bool CommitParameters()
@@ -171,6 +332,55 @@ class CameraSettings{
                 }
             }
             return false;
+        }
+
+        // helper function to get minumum value from a piflt array
+        piflt MinFlt(const piflt* array, int arrayLength)
+        {
+            piflt minimum = array[0];
+            for (int i=1; i<arrayLength; i++)
+            {
+                if (array[i] < minimum)
+                    minimum = array[i];
+            }
+            return minimum;
+        }
+
+        // returns true if toFind is found inside the array, false if not
+        bool FoundInArray(const piflt* array, int arrayLength, piflt toFind)
+        {
+            bool match = false;
+            for (int i=0; i<arrayLength; i++)
+            {
+                if (toFind == array[i])
+                {
+                    match = true;
+                    break;
+                }
+            }
+            return match;
+        }
+
+        // helper function to loop through constraints to see if
+        // the desired parameter can be set
+        // returns true is toFind is found in the required/ capable constraints for
+        // param, false otherwise
+        bool SearchConstraints(piflt toFind, PicamParameter param, PicamConstraintCategory constraintType)
+        {
+            bool found = false;
+            const PicamCollectionConstraint* constraint;
+            Picam_GetParameterCollectionConstraint(_camera, param,
+                constraintType, &constraint);
+            for (int i=0; i<constraint->values_count; i++)
+            {
+                if (constraint->values_array[i] == toFind)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            Picam_DestroyCollectionConstraints(constraint);
+            return found;
         }
 
 };
@@ -200,21 +410,34 @@ public:
         switch(inputInt){
             case 0: InitAndOpen();
                     break;
-            case 1: if (inputs.size() >= 3)
-                        {
-                            // param 3: exposure time
-                            double desiredExposure = factoryObject.createScalar<double>(inputs[2][0])[0];
-                            if (!camSettings_.SetExposureTime(desiredExposure))
-                            {
-                                WriteString("Unable to set the exposure time. Continuing with the original settings.");
-                            }
-                            // param 4: shutter timing mode
-                            int desiredShutter = factoryObject.createScalar<double>(inputs[3][0])[0];
-                            if (!camSettings_.SetShutterMode(desiredShutter))
-                            {
-                                WriteString("Unable to set the shutter mode. Continuing with the original settings.");
-                            }
-                        }
+            case 1:
+                if (inputs.size() >=5)
+                {
+                    // param 5: center n row bin
+                    int desiredCenterBin = factoryObject.createScalar<double>(inputs[4][0])[0];
+                    if (!camSettings_.SetCenterBinRows(desiredCenterBin))
+                    {
+                        WriteString("Error when setting center bins.");
+                    }
+                }
+                if (inputs.size() == 4)
+                {
+                    // param 4: shutter timing mode
+                    int desiredShutter = factoryObject.createScalar<double>(inputs[3][0])[0];
+                    if (!camSettings_.SetShutterMode(desiredShutter))
+                    {
+                        WriteString("Unable to set the shutter mode. Continuing with the original settings.");
+                    }
+                }
+                if (inputs.size() == 3)
+                {
+                    // param 3: exposure time
+                    double desiredExposure = factoryObject.createScalar<double>(inputs[2][0])[0];
+                    if (!camSettings_.SetExposureTime(desiredExposure))
+                    {
+                        WriteString("Unable to set the exposure time. Continuing with the original settings.");
+                    }
+                }
                     AcquireSingle();
                     break;
             case 2: CloseAndExit();
@@ -296,6 +519,8 @@ public:
         _snprintf_s(temp, 128, "Read Rate: %0.3f fps", readRate_);
         WriteString(temp);
         camSettings_ = CameraSettings(*camera_);
+        WriteString("Initial ADC Parameters:");
+        WriteADCParams();
     }
     void AcquireSingle()
     {        
@@ -308,6 +533,11 @@ public:
         Picam_GetParameterFloatingPointValue(*camera_, PicamParameter_ReadoutRateCalculation, &readRate_);
         _snprintf_s(temp, 128, "Read Rate: %0.3f fps", readRate_);
         WriteString(temp);
+        camSettings_.SetLowReadNoise();
+        WriteString("ADC Parameters Committed for Acquisition:");
+        WriteADCParams();
+        WriteString("ROI(s) Committed for Acquisition:");
+        WriteROIs();
         //give acquire a timeout of 2x readout rate, or 3 secs, whichever is larger
         //having a timeout error returned can give the user a means to "reset" in the main app
         double expectedFrameTime = (1 / readRate_);
@@ -409,5 +639,60 @@ private:
             fprintf(pFile_, "%s", string_);
             fclose(pFile_);
         }       
+    }
+
+    // helper to condense ADC parameter writing into one call
+    // quality, speed, gain, ports
+    void WriteADCParams()
+    {
+        const char* temp_picam;
+        char temp[128];
+        if (camSettings_.IsParameterValid(PicamParameter_AdcQuality))
+        {
+            Picam_GetEnumerationString(PicamEnumeratedType_AdcQuality, camSettings_.adc_quality, &temp_picam);
+            _snprintf_s(temp, 128, "\tQuality:\t%s", temp_picam);
+            WriteString(temp);
+        }
+        if (camSettings_.IsParameterValid(PicamParameter_AdcSpeed))
+        {
+            _snprintf_s(temp, 128, "\tSpeed:\t\t%0.3fMHz", camSettings_.adc_speed);
+            WriteString(temp);
+        }
+        if (camSettings_.IsParameterValid(PicamParameter_AdcAnalogGain))
+        {
+            Picam_GetEnumerationString(PicamEnumeratedType_AdcAnalogGain, camSettings_.adc_analog_gain, &temp_picam);
+            _snprintf_s(temp, 128, "\tGain:\t\t%s", temp_picam);
+            WriteString(temp);
+        }
+        if (camSettings_.IsParameterValid(PicamParameter_ReadoutPortCount))
+        {
+            _snprintf_s(temp, 128, "\tPorts:\t\t%d", camSettings_.adc_ports_used);
+            WriteString(temp);
+        }
+        Picam_DestroyString(temp_picam);
+    }
+
+    // helper to write out the current ROI(s)
+    void WriteROIs()
+    {
+        char temp[128];
+        int roi_count = camSettings_.set_rois[0].roi_count;
+        const PicamRoi* roi_objects = camSettings_.set_rois[0].roi_array;
+        _snprintf_s(temp, 128, "%d ROI(s) set.", roi_count);
+        WriteString(temp);
+        for (int i=0; i < roi_count; i++)
+        {
+            _snprintf_s(temp, 128, "\tROI %d:", i+1);
+            WriteString(temp);
+            _snprintf_s(temp, 128, "\t\t(x, y):\t\t\t\t(%d, %d)",
+                roi_objects[i].x, roi_objects[i].y);
+            WriteString(temp);
+            _snprintf_s(temp, 128, "\t\t(width, height):\t(%d, %d)",
+                roi_objects[i].width, roi_objects[i].height);
+            WriteString(temp);
+            _snprintf_s(temp, 128, "\t\t(x_bin, y_bin):\t\t(%d, %d)",
+                roi_objects[i].x_binning, roi_objects[i].y_binning);
+            WriteString(temp);
+        }
     }
 };
