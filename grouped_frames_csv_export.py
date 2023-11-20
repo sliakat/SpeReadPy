@@ -8,7 +8,7 @@ column headers in the exported spreadsheet.
 
 The frame data in the spe file must be spectral -- i.e. 1 row only.
 
-Uses numpy and pandas external libraries.
+Uses numpy, openpyxl, and pandas external libraries.
 """
 
 import numpy as np
