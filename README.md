@@ -14,7 +14,7 @@ Example usage to read spe file content from 'file.spe':
 ```
 from read_spe import SpeReference
 spe = SpeReference('file.spe')
-data = spe.GetData(rois=[2], frames=[0,2])
+data = spe.get_data(rois=[2], frames=[0,2])
 ```
 - this will get data (list of numpy array) for frames 1 and 3 in roi #3 for file
 
