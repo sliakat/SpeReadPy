@@ -1,6 +1,7 @@
 # SpeReadPy
 
-This repo is a hub for automation/ programming content involving Teledyne SciCam products. It started as a Python spe file reader, hence the repository name, but has since branched out into much more.
+This repo is a hub for automation/ programming content involving Teledyne SciCam products. It started as a Python spe file reader, hence the repository name, but has since branched out into much more. Please browse any subfolders of interest and feel free to incorporate content that
+may be relevant to your project. Note that there is no warranty or guarantee of support for any of the personal projects in this repo.
 
 This root directory contains a package -- `read_spe` -- for an spe file reader that works on v3.0 (LightField) versions. Spe v2.x (WinSpec/32) files will work (only first ROI is parsed for legacy files).
 
@@ -10,9 +11,11 @@ Metadata and other information can be found as properties of the `SpeReference` 
 
 ------------------------
 Example usage to read spe file content from 'file.spe':
->>> from read_spe import SpeReference
->>> spe = SpeReference('file.spe')
->>> data = spe.GetData(rois=[2], frames=[0,2])
+```
+from read_spe import SpeReference
+spe = SpeReference('file.spe')
+data = spe.GetData(rois=[2], frames=[0,2])
+```
 - this will get data (list of numpy array) for frames 1 and 3 in roi #3 for file
 
 Additionally, see the definition of `print_metadata` in `show_spe_mpl.py` for an example of how metadata can be extracted from the `SpeReference` onject.
