@@ -78,49 +78,49 @@ class _ROI():
         self._ybin = 1
     @property
     def width(self) -> int:
-        '''width of region'''
+        """width of region"""
         return self._width
     @width.setter
     def width(self, val: int):
         self._width = val
     @property
     def height(self) -> int:
-        '''height of region'''
+        """height of region"""
         return self._height
     @height.setter
     def height(self, val: int):
         self._height = val
     @property
     def stride(self) -> int:
-        '''readout stride of region (bytes)'''
+        """readout stride of region (bytes)"""
         return self._stride
     @stride.setter
     def stride(self, val: int):
         self._stride = val
     @property
     def x(self) -> int:
-        '''x position of upper-left pixel in region'''
+        """x position of upper-left pixel in region"""
         return self._x
     @x.setter
     def x(self, val: int):
         self._x = val
     @property
     def y(self) -> int:
-        '''y position of upper-left pixel in region'''
+        """y position of upper-left pixel in region"""
         return self._y
     @y.setter
     def y(self, val: int):
         self._y = val
     @property
     def xbin(self) -> int:
-        '''number of binned columns in region'''
+        """number of binned columns in region"""
         return self._xbin
     @xbin.setter
     def xbin(self, val: int):
         self._xbin = val
     @property
     def ybin(self) -> int:
-        '''number of binned rows in region'''
+        """number of binned rows in region"""
         return self._ybin
     @ybin.setter
     def ybin(self, val: int):
@@ -138,9 +138,9 @@ class _ROI():
 
 #metadata objects
 class Metadata():
-    '''Base class for metadata objects. Derived classes contain more specific
+    """Base class for metadata objects. Derived classes contain more specific
     members pertaining to the metadata content.
-    '''
+    """
     def __init__(self, event_name: str, datatype: str,
                  bit_depth: np.uint64) -> None:
         self._meta_event = event_name
@@ -148,21 +148,21 @@ class Metadata():
         self._bit_depth = bit_depth
     @property
     def meta_event(self) -> str:
-        '''Metadata event name, pulled from spe xml footer.'''
+        """Metadata event name, pulled from spe xml footer."""
         return self._meta_event
     @property
     def datatype(self) -> np.dtype:
-        '''numpy dtype of the metadata value'''
+        """numpy dtype of the metadata value"""
         return self._datatype
     @property
     def bit_depth(self) -> np.uint64:
-        '''bit depth of the metadata value'''
+        """bit depth of the metadata value"""
         return self._bit_depth
 
 class TimeStamp(Metadata):
-    '''Contains resolution, unit, and origin information for
+    """Contains resolution, unit, and origin information for
     TimeStamp metadata
-    '''
+    """
     _unit = _Unit.MS
     def __init__(self, event_name: str, datatype: str, bit_depth: np.uint64,
                 resolution: np.uint64, absolute_time: str) -> None:
@@ -171,24 +171,24 @@ class TimeStamp(Metadata):
         self._absolute_time = absolute_time
     @property
     def resolution(self) -> np.uint64:
-        '''tick resolution'''
+        """tick resolution"""
         return self._resolution
     @property
     def absolute_time(self) -> str:
-        '''origin in ISO format'''
+        """origin in ISO format"""
         return self._absolute_time
     @property
     def unit(self) -> _Unit:
-        '''unit for values'''
+        """unit for values"""
         return self._unit
 
 class FrameTrackingNumber(Metadata):
-    '''Frame tracking number metadata'''
+    """Frame tracking number metadata"""
     def __init__(self, datatype: str, bit_depth: np.uint64) -> None:
         super().__init__('Frame Tracking Number', datatype, bit_depth)
 
 class GateTracking(Metadata):
-    '''Used for ICCDs and EMiCCDs'''
+    """Used for ICCDs and EMiCCDs"""
     _unit = _Unit.NS
     def __init__(self, event_name: str, datatype: str, bit_depth: np.uint64,
                  monotonic: bool) -> None:
@@ -196,15 +196,15 @@ class GateTracking(Metadata):
         self._monotonic = monotonic
     @property
     def monotonic(self) -> bool:
-        '''Is the gate being tracked monotonic?'''
+        """Is the gate being tracked monotonic?"""
         return self._monotonic
     @property
     def unit(self) -> _Unit:
-        '''unit for values'''
+        """unit for values"""
         return self._unit
 
 class ExperimentSetting():
-    '''Contains experiment setting information parsed from the spe file's
+    """Contains experiment setting information parsed from the spe file's
     xml footer.
 
     --------------------------------------------------------------------------
@@ -214,7 +214,7 @@ class ExperimentSetting():
     - `setting_value`: value of the named setting
     - `setting_type`: reference to setting's datatype
     - `unit`: uint64, int64, float64, or str
-    '''
+    """
     def __init__(self, setting_name: str, setting_value: SettingValueType,
                  setting_type: type, setting_unit: _Unit) -> None:
         self._setting_name = setting_name
@@ -223,23 +223,23 @@ class ExperimentSetting():
         self._setting_unit = setting_unit
     @property
     def setting_name(self) -> str:
-        '''Name of experiment setting. '''
+        """Name of experiment setting. """
         return self._setting_name
     @property
     def setting_value(self) -> SettingValueType:
-        '''Value of setting. Check units with `setting_unit`.'''
+        """Value of setting. Check units with `setting_unit`."""
         return self._setting_value
     @property
     def setting_type(self) -> type:
-        '''Data type of setting.'''
+        """Data type of setting."""
         return self._setting_type
     @property
     def setting_unit(self) -> _Unit:
-        '''Unit of setting.'''
+        """Unit of setting."""
         return self._setting_unit
 
 class SpeReference():
-    '''Facilitates reading of data, metadata, and experiment settings
+    """Facilitates reading of data, metadata, and experiment settings
     from spe files.
 
     Full functionality with spe version 3.0+; for older versions
@@ -268,10 +268,10 @@ class SpeReference():
     - `read_spe.SpeReference.get_data`
     - `read_spe.SpeReference.get_wavelengths`
     - `read_spe.SpeReference.retrieve_experiment_settings`
-    '''
+    """
     @staticmethod
     def _split_file_path(filepath: str) -> tuple[str, str, str]:
-        '''Helper for splitting file path'''
+        """Helper for splitting file path"""
         p = PurePath(filepath)
         return (str(p.parents[0]), p.stem, p.suffix)
     dataTypes = {'MonochromeUnsigned16':np.uint16,
@@ -308,9 +308,9 @@ class SpeReference():
         self._initialize_spe()
 
     def _initialize_spe(self):
-        '''Fills in members with info from spe file (if that info exists).
+        """Fills in members with info from spe file (if that info exists).
         Should always be called internally.
-        '''
+        """
         with open(self._filepath, encoding="utf8") as f:
             f.seek(678)
             self.xml_loc = np.fromfile(f,dtype=np.uint64,count=1)[0]
@@ -413,7 +413,7 @@ class SpeReference():
     def get_data(self,*,rois:Optional[Sequence[int]] = None,
                 frames:Optional[Sequence[int]] = None) ->\
                 Sequence[SpeNdArray]:
-        '''Extracts requested data from the referenced spe file. Only grabs
+        """Extracts requested data from the referenced spe file. Only grabs
         the frame(s) and ROI(s) requested in the input parameters.
 
         Example usage:
@@ -444,7 +444,7 @@ class SpeReference():
         - `ValueError` raised if desired ROI(s) and / or frame(s) fall outside
         of the range contained in the spe file.
         - `TypeError` raised if inputs are not iterable.
-        '''
+        """
         data_list = list()
         #if no inputs, or empty list, set to all
         if not rois:
@@ -521,7 +521,7 @@ class SpeReference():
 
     def get_wavelengths(self,*, rois: Optional[Sequence[int]] = None) ->\
         Sequence[WavelengthNdArray]:
-        '''Extracts wavelength calibration axis for the ROI(s) specified by
+        """Extracts wavelength calibration axis for the ROI(s) specified by
         the `rois` input. Returns empty list if wavelength calibration info
         does not exist.
         ----------------------------------------------------------------------
@@ -543,7 +543,7 @@ class SpeReference():
         - `ValueError` raised when the user input ROI value is outside of the
         range of ROIs existing in the spe file.
         - `TypeError` raised if the input parameter is not iterable.
-        '''
+        """
         if self._spe_version < 3:
             print('Version %0.1f spe files do not have wavelength cal.'%
                 (self._spe_version))
@@ -572,13 +572,13 @@ class SpeReference():
                 wavelength_list.append(self._full_wavelength_coverage)
         return wavelength_list
     def _get_camera_settings_do_not_use(self) -> dict:
-        '''
+        """
         WILL NOT BE MAINTAINED -- SEE GenerateSettingsLists
         Return a dictionary of useful camera settings
         Work in progress
         Current keys: exposure, analog_gain, adc_speed,
         sensor_temperature, camera_sn
-        '''
+        """
         settings_dictionary = {
             'exposure': None,
             'analog_gain': None,
@@ -634,12 +634,12 @@ class SpeReference():
                                                                 settings_dictionary['camera_info'] = '%s, SN: %s'%(child3.get('model'),child3.get('serialNumber'))# type: ignore
         return settings_dictionary
     def retrieve_all_experiment_settings(self) -> Sequence[ExperimentSetting]:
-        '''Parses xml for key settings and output as a list of
+        """Parses xml for key settings and output as a list of
         `ExperimentSetting`. Settings to include are a work in progress.
         
         Check docstring for `retrieve_experiment_settings`
         for a list of settings that are currently included.
-        '''
+        """
         experiment_settings_list = []
 
         #xml parsing
@@ -711,7 +711,7 @@ class SpeReference():
 
     def retrieve_experiment_settings(self, setting_names: Sequence[str]) ->\
         Sequence[ExperimentSetting]:
-        '''Generates an experiment settings list via parsing of the spe's xml
+        """Generates an experiment settings list via parsing of the spe's xml
         footer and iterates through parsed settings until the user input
         setting_names are found. Any found settings are appended to the output
         sequence.
@@ -742,7 +742,7 @@ class SpeReference():
         - `SERIAL_NUMBER`
         - `VERTICAL_SHIFT_RATE`
         ----------------------------------------------------------------------
-        '''
+        """
         experiment_settings_list = self.retrieve_all_experiment_settings()
         output_list: list[ExperimentSetting] = []
         for requested_name in setting_names:
@@ -754,7 +754,7 @@ class SpeReference():
 
     def get_frame_metadata_value(self, frames: Sequence[int]) ->\
         Sequence[Sequence[MetaType]]:
-        '''Retrieves per-frame metadata values for the frames specified in
+        """Retrieves per-frame metadata values for the frames specified in
         the input. The values for any given frame are returned as a `Sequence`
         of `MetaType` values (either `int64` or `float64`). The `SpeReference`
         member `meta_list` should be consulted to understand the type of
@@ -771,7 +771,7 @@ class SpeReference():
         frame (as specified in the input). The inner sequence contains values
         for each metadata type present in the spe file. These types can be
         found in the `meta_list` member of `SpeReference`.
-        '''
+        """
         output_metadata: list = [0] * len(frames)
         with open(self._filepath, encoding="utf8") as f:
             for idx_frame, frame in enumerate(frames):
@@ -796,215 +796,72 @@ class SpeReference():
         return output_metadata
     @property
     def filepath(self) -> str:
-        '''Full file path'''
+        """Full file path"""
         return self._filepath
     @property
     def file_directory(self) -> str:
-        '''Directory containing spe file'''
+        """Directory containing spe file"""
         return self._file_directory
     @property
     def file_extension(self) -> str:
-        '''File extension'''
+        """File extension"""
         return self._file_extension
     @property
     def file_name(self) -> str:
-        '''File name (no extension)'''
+        """File name (no extension)"""
         return self._file_name
     @property
     def spe_version(self) -> float:
-        '''Spe file version'''
+        """Spe file version"""
         return self._spe_version
     @property
     def roi_list(self) -> Sequence[_ROI]:
-        '''tuple of ROIs in the data block'''
+        """tuple of ROIs in the data block"""
         return tuple(self._roi_list)
     @property
     def readout_stride(self) -> NumpyInteger:
-        '''Readout stride of the data block, in bytes'''
+        """Readout stride of the data block, in bytes"""
         return self._readout_stride
     @property
     def frame_stride(self) -> NumpyInteger:
-        '''Frame stride (containing ROIs and Metadata), in bytes'''
+        """Frame stride (containing ROIs and Metadata), in bytes"""
         return self._frame_stride
     @property
     def num_frames(self) -> NumpyInteger:
-        '''Number of frames in the data block'''
+        """Number of frames in the data block"""
         return self._num_frames
     @property
     def pixel_format_key(self) -> PixelFormatKeyType:
-        '''key to access value in the appropriate pixel format dictionary'''
+        """key to access value in the appropriate pixel format dictionary"""
         return self._pixel_format_key
     @property
     def sensor_dims(self) -> _ROI:
-        '''ROI object that has height and width corresponding to original
+        """ROI object that has height and width corresponding to original
         sensor dimensions.
-        '''
+        """
         return self._sensor_dims
     @property
     def meta_list(self) -> Sequence[Metadata]:
-        '''Tuple of metadata types contained in each frame's data block.'''
+        """Tuple of metadata types contained in each frame's data block."""
         return tuple(self._meta_list)
     @property
     def frame_metadata_values(self) -> Sequence[Sequence[MetaType]]:
-        '''Nested tuple containing all frame metadata values in the full
+        """Nested tuple containing all frame metadata values in the full
         data block. Outer loop indexes frame, and inner loop indexes metadata
         element.
-        '''
+        """
         return tuple(map(tuple,self._frame_metadata_values))
     @property
     def xml_footer(self) -> str:
-        '''xml footer of spe file as string, to be used for external
+        """xml footer of spe file as string, to be used for external
         parsing.
-        '''
+        """
         return self._xml_footer
     @property
     def xml_footer_pretty_print(self) -> str:
-        '''xml footer in pretty print form for easier visualization'''
+        """xml footer in pretty print form for easier visualization"""
         dom = md.parseString(self.xml_footer)
         return dom.toprettyxml()
 
-class Fits():
-    '''Container for static methods `generate_fits_file` and
-    `generate_fits_files`.
 
-    - `generate_fits_file` creates a fits file using the astropy library.
-    One file (multi-frame) is generated per ROI. Select experiment
-    information is passed in, but per-frame metadata is NOT. If per-frame
-    metadata is needed, please use `generate_fits_files`.
-    '''
-    @staticmethod
-    def generate_fits_file(spe_ref: SpeReference) -> None:
-        '''**REQUIRES ASTROPY LIBRARY**
-        
-        Generate a fits file (per ROI) using astropy library.
-        Select experiment settings from the spe file's xml footer
-        are carried over to the fits header. For a list of these select
-        settings, please reference the docstring for
-        `read_spe.SpeReference.retrieve_experiment_settings`.
-
-        One file is generated per ROI (these files can thus be multi-frame).
-        As such, per-frame metadata not included -- please use
-        GenerateFitsFiles if per-frame metadata needs to be exported.
-
-        ----------------------------------------------------------------------
-        Input:
-        ----------------------------------------------------------------------
-        - `spe_ref`: `SpeReference` object containing the information from the
-        spe file that will be used to generate fits.
-        ----------------------------------------------------------------------
-        Exceptions:
-        ----------------------------------------------------------------------
-        - `ImportError`: The Python runtime will raise this if astropy cannot
-        be imported.
-        ----------------------------------------------------------------------
-        See Also:
-        ----------------------------------------------------------------------
-        - `read_spe.Fits.generate_fits_files`
-        - `read_spe.SpeReference.retrieve_experiment_settings`
-        '''
-        for region in spe_ref.roi_list:
-            if region.height < 1 or region.width < 1:
-                raise ValueError(
-                    'One or more region(s) of the spe file do not have'
-                    ' valid data.')
-        if spe_ref.spe_version >= 3:
-            datatype: np.dtype = spe_ref.dataTypes[
-                spe_ref.pixel_format_key]# type: ignore
-        else:
-            datatype: np.dtype = spe_ref.dataTypes_old_spe[
-                spe_ref.pixel_format_key]# type: ignore
-        from astropy.io import fits
-        for idx_roi, roi in enumerate(spe_ref.roi_list):
-            output_filepath = '%s\\%s-ROI%03d.fits'%(
-                spe_ref.file_directory, spe_ref.file_name, idx_roi+1)
-            region_data = np.zeros(
-                [spe_ref.num_frames, roi.height, roi.width], dtype=datatype)
-            for j in range(0, spe_ref.num_frames):
-                region_data[j] = spe_ref.get_data(rois=[idx_roi],
-                    frames=[j])[0]
-            hdu = fits.PrimaryHDU(region_data)
-            hdr = hdu.header
-            #append experiment settings list to header
-            experiment_settings_seq =\
-                spe_ref.retrieve_all_experiment_settings()
-            bin_settings_seq = (ExperimentSetting('X_BIN',
-                np.int64(roi.xbin), np.int64, _Unit.NONE),
-                ExperimentSetting('Y_BIN', np.int64(roi.ybin),
-                                  np.int64, _Unit.NONE))
-            assert isinstance(experiment_settings_seq, tuple)
-            for setting in experiment_settings_seq + bin_settings_seq:
-                hdr['HIERARCH %s'%(setting.setting_name)] =\
-                    setting.setting_value
-            hdu.writeto(output_filepath, overwrite=True)
-
-    @staticmethod
-    def generate_fits_files(spe_ref:SpeReference) -> None:
-        '''**REQUIRES ASTROPY LIBRARY**
-        
-        Generates fits file(s) per frame per ROI in a subdirectory created
-        in the spe file's location. Select experiment settings from the spe
-        file's xml footer are carried over to the fits header. For a list of
-        these select settings, please reference the docstring for
-        `read_spe.SpeReference.retrieve_experiment_settings`.
-
-        Frame metadata for exposure started timestamp will be present in the
-        header of each file (if exists in the spe file).
-
-        ----------------------------------------------------------------------
-        Input:
-        ----------------------------------------------------------------------
-        - `spe_ref`: `SpeReference` object containing the information from the
-        spe file that will be used to generate fits.
-        ----------------------------------------------------------------------
-        Exceptions:
-        ----------------------------------------------------------------------
-        - `ImportError`: The Python runtime will raise this if astropy cannot
-        be imported.
-        ----------------------------------------------------------------------
-        See Also:
-        ----------------------------------------------------------------------
-        - `read_spe.Fits.generate_fits_file`
-        - `read_spe.SpeReference.retrieve_experiment_settings`
-        '''
-        for region in spe_ref.roi_list:
-            if region.height < 1 or region.width < 1:
-                raise ValueError('One or more region(s) of the'
-                    ' spe file do not have valid data.')
-        from astropy.io import fits
-        new_folder_path = Path('%s\\%s-fits\\'%(spe_ref.file_directory,
-            spe_ref.file_name))
-        if not new_folder_path.exists():
-            new_folder_path.mkdir()
-        for idx_roi, roi in enumerate(spe_ref.roi_list):
-            for j in range(0, spe_ref.num_frames):
-                output_filepath = '%s\\%s-ROI%03d-Frame%04d.fits'%(
-                    new_folder_path, spe_ref.file_name, idx_roi+1, j+1)
-                file_data = spe_ref.get_data(rois=[idx_roi], frames=[j])[0]
-                frame_metadata = spe_ref.get_frame_metadata_value([j])[0]
-                hdu = fits.PrimaryHDU(file_data)
-                hdr = hdu.header
-                #add time stamps to header if they exist
-                if spe_ref.meta_list:
-                    count = 0
-                    for meta in spe_ref.meta_list:
-                        if isinstance(meta, TimeStamp):
-                            if meta.meta_event == 'ExposureStarted':
-                                hdr['HIERARCH ACQUISITION_ORIGIN']\
-                                    = meta.absolute_time
-                                hdr[
-                                'HIERARCH FRAME_EXPOSURE_STARTED_OFFSET_MS']\
-                                    = frame_metadata[count]
-                        count += 1
-                #append experiment settings list to header
-                experiment_settings_seq\
-                    = spe_ref.retrieve_all_experiment_settings()
-                bin_settings_seq = (ExperimentSetting('X_BIN',
-                np.int64(roi.xbin), np.int64, _Unit.NONE),
-                ExperimentSetting('Y_BIN', np.int64(roi.ybin),
-                                  np.int64, _Unit.NONE))
-                assert isinstance(experiment_settings_seq, tuple)
-                for setting in experiment_settings_seq + bin_settings_seq:
-                    hdr['HIERARCH %s'%(setting.setting_name)]\
-                        = setting.setting_value
-                hdu.writeto(output_filepath, overwrite=True)
     

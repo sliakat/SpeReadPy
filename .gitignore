@@ -3,3 +3,5 @@ PICamPy/Linux/*.raw
 PICamPy/Linux/data20221011-210727-1024x1024-1000-16bit.raw
 __pycache__/
 *.txt
+*.spe
+*xlsx
