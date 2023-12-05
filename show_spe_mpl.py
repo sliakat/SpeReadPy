@@ -5,20 +5,40 @@ Created on Wed Feb  9 16:03:10 2022
 @author: sliakat
 """
 
-from typing import Any
+from typing import Any, Optional
 from collections.abc import Sequence
+from functools import partial
+from threading import Lock
 import tkinter as tk
 from tkinter import filedialog
 import xml.etree.ElementTree as ET
 import warnings
 import numpy as np
 from matplotlib import pyplot as plt
-from matplotlib.widgets import RectangleSelector, SpanSelector, Slider
+from matplotlib.widgets import (Button, RectangleSelector, SpanSelector,
+    Slider, TextBox)
 from scipy import interpolate
 from matplotlib import cm
+from matplotlib.axes import Axes
 from matplotlib.colors import ListedColormap
+from matplotlib.transforms import Bbox
 from read_spe import (SpeReference, TimeStamp, FrameTrackingNumber,
-    GateTracking)
+    GateTracking, ImageNdArray)
+
+## globals
+#font sizes
+font_title = 36
+font_labels = 24
+font_stats = 18
+
+spe_state_objects: list['SpeState'] = []
+
+##user inputs
+# if True, then x-axis is displayed
+# as pixel even if calibration exists
+PIXEL_AXIS = False 
+AUTOCONTRAST = True
+BG_APPLIED = False
 
 class Region():
     '''Contains information for a data region to allow for processing.
@@ -133,12 +153,12 @@ class SpeState():
         self.region_list: Sequence[RegionImageState] = []
         for i in range(0, self.num_regions):
             self.region_list.append(RegionImageState(i))
-            self.region_list[i].region.x = self.spe_file._roi_list[i].x
-            self.region_list[i].region.y = self.spe_file._roi_list[i].y
-            self.region_list[i].region.width = self.spe_file._roi_list[i].width
-            self.region_list[i].region.height = self.spe_file._roi_list[i].height
-            self.region_list[i].region.x_bin = self.spe_file._roi_list[i].xbin
-            self.region_list[i].region.y_bin = self.spe_file._roi_list[i].ybin
+            self.region_list[-1].region.x = self.spe_file._roi_list[i].x
+            self.region_list[-1].region.y = self.spe_file._roi_list[i].y
+            self.region_list[-1].region.width = self.spe_file._roi_list[i].width
+            self.region_list[-1].region.height = self.spe_file._roi_list[i].height
+            self.region_list[-1].region.x_bin = self.spe_file._roi_list[i].xbin
+            self.region_list[-1].region.y_bin = self.spe_file._roi_list[i].ybin
     @property
     def spe_file(self)->SpeReference:
         return(self._spe_file)
@@ -147,19 +167,30 @@ class SpeState():
         return(self._num_regions)
 
 class RegionImageState():
+    """Stores states of objects needed to visualize the data in the
+    current Region.
+    """
+    _current_frame: int
+    _fig: Optional[Any] = None
+    _ax: Optional[Axes] = None
+    _ax_row_slices: list[Axes] = []
+    _rectangle_select: Optional[RectangleSelector] = None
+    _lock = Lock()
+    _span_select: Optional[SpanSelector] = None
+    _slider: Optional[Slider] = None
+    _slider_connect: Optional[int] = None
+    _button: Optional[Button] = None
+    _textbox: Optional[TextBox] = None
+    _textbox_entry = 0
+    _pixel_axis: bool = False
+    _autocontrast: bool = True
+    _selection_rectangle: Rectangle
+    _region: Region
+    _region_wavelengths: Optional[Sequence[float]] = None
     def __init__(self, roi_index: int) -> None:
         self._roi_index = roi_index
         self._current_frame = 1
-        self._fig = None
-        self._ax = None
-        self._rectangle_select = None
-        self._span_select = None
-        self._slider = None
-        self._slider_connect = None
-        self._pixel_axis = False
-        self._autocontrast = True
         self._selection_rectangle = Rectangle()
-        self._region_wavelengths = None
         self._region = Region()
     @property
     def roi_index(self)->int:
@@ -200,18 +231,65 @@ class RegionImageState():
     def generate_mpl_widgets(self, spe_state: SpeState):
         '''connect to matplotlibs callback from object state'''
         #slider
-        self._slider = SliderGen(self.ax, spe_state.spe_file._num_frames)
-        self.slider.label.set_size(fontLabels)
-        self.slider_connect = self.slider.on_changed((lambda val: update_frame(val, spe_state, self)))
-
+        if spe_state.spe_file.num_frames > 1:
+            self._slider = SliderGen(self.ax, spe_state.spe_file.num_frames)
+            self.slider.label.set_size(font_labels)
+            self.slider_connect = self.slider.on_changed((
+                lambda val: update_frame(val, spe_state, self)))
         if self.region.height > 1:
             #rectangle selection
             self.rectangle_select = RectSelect(spe_state, self)
+            self._textbox_entry = int(self.region.height//2 - 1)
+            self._textbox = generate_text_box(int(self.region.height//2 - 1))
+            self._textbox.on_submit(self.on_text_submit)
+            self._button = generate_button('Plot row slice')
+            self._button.on_clicked(partial(self.on_button_click,
+                spe_state=spe_state))
         elif self.region.height == 1:
             self.span_select = SpanSelect(spe_state, self)
         else:
             raise RuntimeError('Region height needs to be >= 1 row.')
+    def on_text_submit(self, text: str) -> None:
+        """Callback for text box submission. Validates for an integer
+        > 0 and < height of data block. If the submission is valid,
+        """
+        # validate
+        try:
+            selected_row = int(text)
+        except ValueError:
+            warnings.warn('An integer needs to be entered into the text box.'
+                f' Setting back to {self._textbox_entry}.')
+            self._textbox.set_val(str(self._textbox_entry))
+            return
+        if selected_row < 0 or selected_row >= self.region.height:
+            warnings.warn('A incorrect value was entered. The value needs to'
+                f' be > 0 and < {self.region.height}.')
+            self._textbox.set_val(str(self._textbox_entry))
+            return
+        with self._lock:
+            self._textbox_entry = selected_row
+    def on_button_click(self, click, spe_state: SpeState) -> None:
+        """Callback for button click. Generates a line plot in a new
+        figure (modeless) for the row specified in the text box.
 
+        -----
+        Notes:
+        -----
+        The text box callback will have performed the necessary
+        validation on the row input, so there doesn't need to be
+        any here.
+        """
+        data = spe_state.spe_file.get_data(frames=[self.current_frame-1],
+            rois=[self.roi_index])[0][:, self._textbox_entry, :]
+        self._ax_row_slices.append(plt.figure(
+            f'Row {self._textbox_entry} slice for '
+            f'{spe_state.spe_file.file_name}, ROI {self.roi_index+1}'
+            ).add_subplot(111))
+        plotData(data, self._ax_row_slices[-1], self.region_wavelengths,
+            '%s, ROI %02d'%(
+            spe_state.spe_file.file_name, self.roi_index+1),
+            self.current_frame, pixAxis=self.pixel_axis,
+            xBound1=-1, xBound2=-1, yBound1=-1, yBound2=-1)
     @property
     def slider_connect(self) -> Any:
         return(self._slider_connect)
@@ -261,11 +339,42 @@ class RegionImageState():
         self._region.y_bin = y_bin
     
 
-#helper function to get pixel coords if wavelength cal is on x-axis
-def findXPixels(wl,x1,x2):
-    x1Pix = int(np.argmin(np.abs(wl - x1)))
-    x2Pix = int(np.argmin(np.abs(wl - x2)))
-    return x1Pix,x2Pix
+def generate_text_box(def_entry: int) -> TextBox:
+    """Generates a text box used to enter a row number (from a 2-D image)
+    to plot as a 1-D line. Used with an accompanying button.
+
+    -----
+    Input:
+    -----
+    img_axis
+        `Axes` representing the painted image. The text box
+        (and accompanying) button will be oriented underneath
+        this `Axes`.
+    """
+    ax_text_box: Axes = plt.axes((0.45, 0.01, .02, .025))
+    return TextBox(ax_text_box, '', initial = str(def_entry),
+        textalignment='center')
+
+def generate_button(label: str) -> Button:
+    """Generates a button that will plot the a slice for the row number
+    shown by the accompanying text box.
+
+    -----
+    Input:
+    -----
+    label:
+        The displayed label for the button.    
+    """
+    ax_button: Axes = plt.axes((0.48, 0.01, .05, .025))
+    return Button(ax_button, label)
+
+def find_x_pixels(wl: int, x1: int, x2: int):
+    """helper function to get pixel coords if wavelength cal
+    is on x-axis
+    """
+    x1_pix = int(np.argmin(np.abs(wl - x1)))
+    x2_pix = int(np.argmin(np.abs(wl - x2)))
+    return x1_pix, x2_pix
 
 #not using this in plot routine because mpl norms and then cmaps, but it is still a useful helper function for other applications
 def GenCustomCmap(data, bits: int=16):  #take gray cmap, make yellow if 0, red if saturated
@@ -331,7 +440,7 @@ def FWHM(data):  #pass in a line (1D array)
     
 
 def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=-1, xBound2: int=-1, yBound1: int=-1, yBound2: int=-1):     #pass in frame
-    global bits, bg, fontTitle, fontLabels  
+    global bits, BG_APPLIED, font_title, font_labels  
     flatData = data.ravel()
     #image contrast adjustments
     if (xBound2 - xBound1 > 2) and (yBound2 -yBound1 > 2):
@@ -351,13 +460,13 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
         ax.grid()
         if len(wave) > 0 and pixAxis is False:
             ax.plot(wave,data[0])
-            ax.set_xlabel('Wavelength (nm)',fontsize=fontLabels)
+            ax.set_xlabel('Wavelength (nm)',fontsize=font_labels)
             ax.set(xlim=(wave[0],wave[-1]))
         else:
             ax.plot(data[0])
-            ax.set_xlabel('Pixels',fontsize=fontLabels)
+            ax.set_xlabel('Pixels',fontsize=font_labels)
             ax.set(xlim=(0,np.size(data[0])))
-        ax.set_ylabel('Intensity (counts)',fontsize=fontLabels)
+        ax.set_ylabel('Intensity (counts)',fontsize=font_labels)
     else:
         # colorMap = 'gray'
         # if bg==False:
@@ -367,12 +476,12 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
         if len(wave) > 0 and pixAxis is False and np.min(wave) != np.max(wave):
             ax.imshow(data,vmin=display_min,vmax=display_max,cmap='gray',extent=[wave[0],wave[-1],np.size(data,0),0],
                 aspect=(wave[-1]-wave[0]) / data.shape[1])
-            ax.set_xlabel('Wavelength (nm)',fontsize=fontLabels)
+            ax.set_xlabel('Wavelength (nm)',fontsize=font_labels)
         else:
             ax.imshow(data,origin='upper',vmin=display_min,vmax=display_max,cmap='gray', aspect=1)
-            ax.set_xlabel('Column',fontsize=fontLabels)
-        ax.set_ylabel('Row',fontsize=fontLabels)
-        if bg==False:
+            ax.set_xlabel('Column',fontsize=font_labels)
+        ax.set_ylabel('Row',fontsize=font_labels)
+        if BG_APPLIED==False:
             if np.min(data) <= 0:
                 zeros = np.argwhere(data==0)
                 if len(wave) > 10 and pixAxis==False:
@@ -386,19 +495,19 @@ def plotData(data,ax,wave,name,frame: int=1,*,pixAxis: bool=False, xBound1: int=
                 else:
                     ax.scatter(sat[:,1],sat[:,0],color='red',s=10)
     axName = '%s, Frame %d'%(name,frame)
-    ax.set_title(axName, fontsize=fontTitle)
+    ax.set_title(axName, fontsize=font_title)
     for label in (ax.get_xticklabels() + ax.get_yticklabels()):
-        label.set_fontsize(fontLabels)
+        label.set_fontsize(font_labels)
     plt.show()
 
 #display helpers
 def WriteStats(axis, string):
-    global fontStats
+    global font_stats
     #clear previous text object
     for txt in axis.texts:
         txt.remove()
     plt.draw()
-    axis.text(0,1.15,string, fontsize=fontStats, verticalalignment='top', color = 'r', transform=axis.transAxes)
+    axis.text(0,1.15,string, fontsize=font_stats, verticalalignment='top', color = 'r', transform=axis.transAxes)
     
 
 def GetStats(data, x1, x2, y1, y2):
@@ -414,7 +523,7 @@ def box_select_callback(eclick, erelease, spe_state: SpeState, region: RegionIma
     x1, y1 = int(np.floor(eclick.xdata)), int(np.floor(eclick.ydata))
     x2, y2 = int(np.floor(erelease.xdata)), int(np.floor(erelease.ydata))
     if not region.pixel_axis and any(region.region_wavelengths):
-        x1, x2 = findXPixels(region.region_wavelengths, x1, x2)
+        x1, x2 = find_x_pixels(region.region_wavelengths, x1, x2)
     if x2-x1 >= 3 and y2-y1 >= 3:
         data = np.array(region.ax.get_images().pop()._A)
         centerRow = np.int32(np.floor(np.shape(data)[0]/2))
@@ -438,7 +547,7 @@ def StatsLinePlot(xmin, xmax, spe_state: SpeState, region: RegionImageState):
     #data shape here will be (1, cols)
     #print(np.floor(xmin),np.floor(xmax))
     if not region.pixel_axis and len(region.region_wavelengths) > 0:
-        xmin, xmax = findXPixels(region.region_wavelengths, xmin, xmax)    
+        xmin, xmax = find_x_pixels(region.region_wavelengths, xmin, xmax)    
     regionDat = region.ax.get_lines()[0].get_data()[1][int(np.floor(xmin)):int(np.floor(xmax))]
     mean = np.mean(regionDat)
     dev = np.std(regionDat)
@@ -479,7 +588,7 @@ def FindXmlElems(xmlStr, stringList):
         print('\n\n')
         
 def print_selected_xml_entries(xmlStr):
-    global bits, bg    
+    global bits, BG_APPLIED    
     if len(xmlStr)>50:
         xmlRoot = ET.fromstring(xmlStr)
         #find DataHistories
@@ -687,7 +796,7 @@ def print_selected_xml_entries(xmlStr):
                                                                                             if 'Enabled'.casefold() in child7.tag.casefold():
                                                                                                 if child7.text == 'True':
                                                                                                     correctionList.append('Background')
-                                                                                                    bg = True
+                                                                                                    BG_APPLIED = True
                                                                                     if 'FlatfieldCorrection'.casefold() in child6.tag.casefold():
                                                                                         for child7 in child6:
                                                                                             if 'Enabled'.casefold() in child7.tag.casefold():
@@ -758,19 +867,7 @@ def StopPrompt():
     input()
 
 if __name__=="__main__":
-    warnings.filterwarnings("ignore")
 
-    #font sizes (global)
-    fontTitle = 36
-    fontLabels = 24
-    fontStats = 18
-
-    #global
-    spe_state_objects: list[SpeState] = []
-    pixel_axis = False #if True, then x-axis is displayed
-    # as pixel even if calibration exists
-    autocontrast = True
-    bg = False
 
     #use tk for file dialog
     root = tk.Tk()
@@ -815,11 +912,11 @@ if __name__=="__main__":
                 rois=[idx_rgn])
             rgn.ax = rgn.fig.add_subplot(111)
             rgn.generate_mpl_widgets(spe_state_objects[idx_filename])
-            rgn.pixel_axis = pixel_axis
-            rgn.autocontrast = autocontrast
+            rgn.pixel_axis = PIXEL_AXIS
+            rgn.autocontrast = AUTOCONTRAST
             plotData(current_spe.get_data(frames=[0], rois=[idx_rgn])[0][0],
                 rgn.ax, rgn.region_wavelengths, '%s, ROI %02d'%
-                (current_spe.file_name, idx_rgn+1), pixAxis=pixel_axis)
+                (current_spe.file_name, idx_rgn+1), pixAxis=PIXEL_AXIS)
             print_metadata(current_spe, rgn.current_frame)
         print('\n')
     StopPrompt()

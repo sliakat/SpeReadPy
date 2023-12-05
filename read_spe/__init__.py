@@ -28,5 +28,5 @@ writing module.
 """
 
 from .read_spe import (ExperimentSetting, FrameTrackingNumber, GateTracking,
-    SpeReference, TimeStamp)
+    ImageNdArray, SpeReference, TimeStamp)
 from .fits import Fits
