@@ -223,7 +223,7 @@ def DisplayImagePG(imData, bits, displayItem):
     pass
     
 #this will run in its own thread
-def AcquireHelper(camera):
+def AcquireHelper(camera: 'Camera'):
     dat = availableData(0,0)
     aStatus=acqStatus(False,0,0)
     camera.picamLib.Picam_StartAcquisition(camera.dev)
@@ -246,6 +246,10 @@ def AcquireHelper(camera):
             elif camera.bits > 16 and camera.bits <32:
                 camera.ProcessData32(dat, camera.rStride.value)
         #add 50ms sleep in this thread to test if calling ProcessData fewer times leads to less jitter in display
+        # print errors mask, if nonzero
+        if aStatus.errors:
+            print('!!\tAcquisition Error: '
+                f'{camera.errorsMask[aStatus.errors]}\t!!')
 
 #any key press to stop an acquisition - run as a daemon thread
 #thread sits waiting for an input, if other threads finish, this exits

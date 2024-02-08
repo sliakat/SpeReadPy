@@ -36,6 +36,7 @@ from PrincetonInstruments.LightField.Automation import Automation
 
 if __name__ == '__main__':
     auto = Automation(True, List[String]())
+    exp = auto.LightFieldApplication.Experiment
     # TODO: Add lines to identify automation issues.
     input('Press Enter key to dispose the automation instance and'
         ' exit script.\n')
