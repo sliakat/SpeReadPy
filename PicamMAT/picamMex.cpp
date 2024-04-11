@@ -420,7 +420,7 @@ public:
                         WriteString("Error when setting center bins.");
                     }
                 }
-                if (inputs.size() == 4)
+                if (inputs.size() >= 4)
                 {
                     // param 4: shutter timing mode
                     int desiredShutter = factoryObject.createScalar<double>(inputs[3][0])[0];
@@ -429,7 +429,7 @@ public:
                         WriteString("Unable to set the shutter mode. Continuing with the original settings.");
                     }
                 }
-                if (inputs.size() == 3)
+                if (inputs.size() >= 3)
                 {
                     // param 3: exposure time
                     double desiredExposure = factoryObject.createScalar<double>(inputs[2][0])[0];
