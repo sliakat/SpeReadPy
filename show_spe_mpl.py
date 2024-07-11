@@ -862,13 +862,11 @@ def print_selected_xml_entries(xmlStr):
                                                                                     print(', ',end='')
     print('')
 
-def StopPrompt():
+def stop_prompt():
     print('Press Enter to end script')
     input()
 
 if __name__=="__main__":
-
-
     #use tk for file dialog
     root = tk.Tk()
     filenames = filedialog.askopenfilenames(
@@ -919,4 +917,5 @@ if __name__=="__main__":
                 (current_spe.file_name, idx_rgn+1), pixAxis=PIXEL_AXIS)
             print_metadata(current_spe, rgn.current_frame)
         print('\n')
-    StopPrompt()
+    if filenames:
+        stop_prompt()
