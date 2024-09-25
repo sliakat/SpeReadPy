@@ -408,11 +408,14 @@ def print_metadata(spe_file: SpeReference, frame_number: int) -> None:
         for meta in spe_file.meta_list:
             meta_value = spe_file.frame_metadata_values[frame_number-1][count]
             if isinstance(meta, TimeStamp):
-                 print('%s:\t%0.3f ms'%(meta.meta_event, meta_value))
+                 print(f'{meta.meta_event}'.ljust(30)
+                    + f'{meta_value:0,.3f} ms')
             if isinstance(meta, FrameTrackingNumber):
-                print('%s:\t%04d'%(meta.meta_event, meta_value))
+                print(f'{meta.meta_event}'.ljust(30)
+                    + f'{meta_value:04d}')
             if isinstance(meta, GateTracking):
-                 print('%s:\t%0.3f ns'%(meta.meta_event, meta_value))
+                print(f'{meta.meta_event}'.ljust(30)
+                    + f'{meta_value:0,.3f} ns')
             count += 1
 #helper to get FWHM of a line section
 def FWHM(data):  #pass in a line (1D array)
@@ -598,7 +601,8 @@ def print_selected_xml_entries(xmlStr):
                     if 'DataHistory'.casefold() in child1.tag.casefold():
                         for child2 in child1:
                             if 'Origin'.casefold() in child2.tag.casefold():
-                                print('LF version used:\t%s'%(child2.get('softwareVersion')))
+                                print('LF version used:'.ljust(30)
+                                    + f'{child2.get('softwareVersion')}')
                                 for child3 in child2:
                                     if 'Experiment'.casefold() in child3.tag.casefold():
                                         for child4 in child3:
@@ -607,11 +611,17 @@ def print_selected_xml_entries(xmlStr):
                                                     if 'Cameras'.casefold() in child2.tag.casefold():
                                                         for child3 in child2:
                                                             if 'Camera'.casefold() in child3.tag.casefold():
-                                                                print('Camera model: %s\n\tSN: %s'%(child3.get('model'),child3.get('serialNumber')))
+                                                                print('Camera model:'.ljust(30)
+                                                                    + f'{child3.get('model')}\n'
+                                                                    + 'Camera Serial Number:'.ljust(30)
+                                                                    + f'{child3.get('serialNumber')}')
                                                     if 'Spectrometers'.casefold() in child2.tag.casefold():
                                                         for child3 in child2:
                                                             if 'Spectrometer'.casefold() in child3.tag.casefold():
-                                                                print('Spectrograph model: %s\n\tSN: %s'%(child3.get('model'),child3.get('serialNumber')))                                            
+                                                                print('Spectrograph model:'.ljust(30)
+                                                                    + f'{child3.get('model')}\n'
+                                                                    + 'Spectrograph Serial Number:'.ljust(30)
+                                                                    + f'{child3.get('serialNumber')}')                                            
                                             if 'Devices'.casefold() in child4.tag.casefold():
                                                 for child2 in child4:
                                                     if 'Cameras'.casefold() in child2.tag.casefold():
@@ -623,33 +633,41 @@ def print_selected_xml_entries(xmlStr):
                                                                             if 'Information'.casefold() in child5.tag.casefold():
                                                                                 for child6 in child5:
                                                                                     if 'SensorName'.casefold() in child6.tag.casefold():
-                                                                                        print('Camera sensor:\t\t%s'%(child6.text))
+                                                                                        print('Camera sensor:'.ljust(30)
+                                                                                          + f'{child6.text}')
                                                                                     if 'Pixel'.casefold() in child6.tag.casefold():
                                                                                         for child7 in child6:
                                                                                             if ('Width'.casefold() in child7.tag.casefold()) and ('GapWidth'.casefold() not in child7.tag.casefold()):
-                                                                                                print('Pixel width:\t\t%sum'%(child7.text))
+                                                                                                print('Pixel width:'.ljust(30)
+                                                                                                + f'{child7.text}um')
                                                                             if 'Temperature'.casefold() in child5.tag.casefold():
                                                                                 for child6 in child5:
                                                                                     if 'Reading'.casefold() in child6.tag.casefold():
-                                                                                        print('Temperature:\t\t%sC, Status: '%(child6.text),end='')
+                                                                                        print('Temperature:'.ljust(30)
+                                                                                          + f'{child6.text}C, ', end='')
                                                                                     if ('Status'.casefold() in child6.tag.casefold()) and ('CoolingFanStatus'.casefold() not in child6.tag.casefold()) and ('VacuumStatus'.casefold() not in child6.tag.casefold()):
                                                                                         print('%s'%(child6.text))
                                                                                     if ('VacuumStatus'.casefold() in child6.tag.casefold()):
-                                                                                        print('Vacuum Status:\t\t%s'%(child6.text))
+                                                                                        print('Vacuum Status:'.ljust(30)
+                                                                                          + f'{child6.text}')
                                                                             if 'Cleaning'.casefold() in child5.tag.casefold():
                                                                                 for child6 in child5:
                                                                                     if 'CleanSerialRegister'.casefold() in child6.tag.casefold():
                                                                                         if child6.get('relevance') != 'False':
-                                                                                            print('Clean Serial Reg:\t%s'%(child6.text))
+                                                                                            print('Clean Serial Reg:'.ljust(30)
+                                                                                          + f'{child6.text}')
                                                                                     if 'CleanUntilTrigger'.casefold() in child6.tag.casefold():
                                                                                         if child6.get('relevance') != 'False':
-                                                                                            print('Clean Until Trig:\t%s'%(child6.text))
+                                                                                            print('Clean Until Trig:'.ljust(30)
+                                                                                          + f'{child6.text}')
                                                                     if 'ShutterTiming'.casefold() in child4.tag.casefold():
                                                                         for child5 in child4:
                                                                             if 'ExposureTime'.casefold() in child5.tag.casefold():
-                                                                                print('Exposure Time:\t\t%s ms'%(child5.text))
+                                                                                print('Exposure Time:'.ljust(30)
+                                                                                          + f'{float(child5.text):0,.3f}ms')
                                                                             if 'Mode'.casefold() in child5.tag.casefold():
-                                                                                print('Shutter Mode:\t\t%s'%(child5.text))
+                                                                                print('Shutter Mode:'.ljust(30)
+                                                                                          + f'{child5.text}')
                                                                     if 'Gating'.casefold() in child4.tag.casefold():
                                                                         gateMode = ''
                                                                         startDelay = 0
@@ -695,39 +713,53 @@ def print_selected_xml_entries(xmlStr):
                                                                                                     endDelay = np.float64(child7.get('delay'))
                                                                                                     gateMode = 'Dif'
                                                                         if gateMode == 'Repetitive':
-                                                                            print('Gating:\t\t\t\t%s\nGate Width:\t\t\t%0.3f ns\nGate Delay:\t\t\t%0.3f ns'%(gateMode,startWidth,startDelay))
+                                                                            print('Gating:'.ljust(30)+ gateMode.ljust(30)
+                                                                                  + '\nStart Width:'.ljust(30) + f'{startWidth:0,.3f}ns'.ljust(30)
+                                                                                  + '\nGate Delay:'.ljust(30) + f'{startDelay:0,.3f}ns'.ljust(30))
                                                                         if gateMode == 'Sequential' or gateMode == 'Dif':
-                                                                            print('Gating:\t\t\t\t%s\nStart Width:\t\t%0.3f ns\nStart Delay:\t\t%0.3f ns\nEnd Width:\t\t\t%0.3f ns\nEnd Delay:\t\t\t%0.3f ns'
-                                                                                  %(gateMode,startWidth,startDelay,endWidth,endDelay))
+                                                                            print('Gating:'.ljust(30)+ gateMode.ljust(30)
+                                                                            + '\nStart Width:'.ljust(30) + f'{startWidth:0,.3f}ns'.ljust(30)
+                                                                            + '\nStart Delay:'.ljust(30) + f'{startDelay:0,.3f}ns'.ljust(30)
+                                                                            + '\nEnd Width:'.ljust(30) + f'{endWidth:0,.3f}ns'.ljust(30)
+                                                                            + '\nEnd Delay:'.ljust(30) + f'{endDelay:0,.3f}ns'.ljust(30))
                                                                     if 'Intensifier'.casefold() in child4.tag.casefold():
                                                                         for child5 in child4:
                                                                             if 'Gain'.casefold() in child5.tag.casefold():
                                                                                 if child5.get('relevance') != 'False':
-                                                                                    print('Intensifier Gain:\t%sx'%(child5.text))
+                                                                                    print('Intensifier Gain:'.ljust(30)
+                                                                                          + f'{child5.text}x')
                                                                             if 'Status'.casefold() in child5.tag.casefold():
-                                                                                print('Intensifier Status:\t%s'%(child5.text))
+                                                                                print('Intensifier Status:'.ljust(30)
+                                                                                          + f'{child5.text}')
                                                                             if 'EMIccd'.casefold() in child5.tag.casefold():
                                                                                 for child6 in child5:
                                                                                     if ('Gain'.casefold() in child6.tag.casefold()) and ('GainControlMode'.casefold() not in child6.tag.casefold()):
                                                                                         if child6.get('relevance') != 'False':
-                                                                                            print('EMI Gain:\t\t\t%sx'%(child6.text))
+                                                                                            print('EMI Gain:'.ljust(30)
+                                                                                          + f'{child6.text}x')
                                                                                 
                                                                     if 'ReadoutControl'.casefold() in child4.tag.casefold():
                                                                         for child5 in child4:
                                                                             if 'Mode'.casefold() in child5.tag.casefold():
-                                                                                print('Readout Mode:\t\t%s'%(child5.text))
+                                                                                print('Readout Mode:'.ljust(30)
+                                                                                          + f'{child5.text}')
                                                                             if 'Time'.casefold() in child5.tag.casefold():
-                                                                                print('Readout Time:\t\t%0.3f ms'%(np.float32(child5.text)))
+                                                                                print('Readout Time:'.ljust(30)
+                                                                                          + f'{float(child5.text):0,.3f}ms')
                                                                             if 'StorageShiftRate'.casefold() in child5.tag.casefold():
                                                                                 if child5.get('relevance') != 'False':
-                                                                                    print('Storage Shift:\t\t%sus'%(child5.text))
+                                                                                    print('Storage Shift:'.ljust(30)
+                                                                                          + f'{float(child5.text):0,.3f}us')
                                                                             if 'VerticalShiftRate'.casefold() in child5.tag.casefold():
                                                                                 if child5.get('relevance') != 'False':
-                                                                                    print('Vertical Shift:\t\t%sus'%(child5.text))
+                                                                                    print('Vertical Shift:'.ljust(30)
+                                                                                          + f'{float(child5.text):0,.3f}us')
                                                                             if 'PortsUsed'.casefold() in child5.tag.casefold():
-                                                                                print('Ports Used:\t\t\t%s'%(child5.text))
+                                                                                print('Ports Used:'.ljust(30)
+                                                                                          + f'{child5.text}')
                                                                             if 'Accumulations'.casefold() in child5.tag.casefold():
-                                                                                print('Accumulations:\t\t%s'%(child5.text))
+                                                                                print('Accumulations:'.ljust(30)
+                                                                                          + f'{float(child5.text):0,.3f}')
                                                                     if 'HardwareIO'.casefold() in child4.tag.casefold():
                                                                         for child5 in child4:                                                    
                                                                             if 'Trigger'.casefold() in child5.tag.casefold():
@@ -739,28 +771,35 @@ def print_selected_xml_entries(xmlStr):
                                                                                     if 'Source'.casefold() in child6.tag.casefold():
                                                                                         triggerMode = child6.text
                                                                                 if triggerMode == "Internal":
-                                                                                    print('Trigger:\t\t\tInternal, %0.3f Hz'%(triggerFreq))
+                                                                                    print('Trigger:'.ljust(30)
+                                                                                          + f'Internal, {triggerFreq:0,.3f} Hz')
                                                                     if 'Adc'.casefold() in child4.tag.casefold():
                                                                         for child5 in child4:
                                                                             if 'Speed'.casefold() in child5.tag.casefold():
                                                                                 if child5.get('relevance') != 'False':
-                                                                                    print('ADC Speed:\t\t\t%s MHz'%(child5.text))
+                                                                                    print('ADC Speed:'.ljust(30)
+                                                                                          + f'{child5.text} MHz')
                                                                             if 'AnalogGain'.casefold() in child5.tag.casefold():
                                                                                 if child5.get('relevance') != 'False':
-                                                                                    print('Analog Gain:\t\t%s'%(child5.text))
+                                                                                    print('Analog Gain:'.ljust(30)
+                                                                                          + f'{child5.text}')
                                                                             if 'EMGain'.casefold() in child5.tag.casefold():
                                                                                 if child5.get('relevance') != 'False':
-                                                                                    print('EM Gain:\t\t\t%sx'%(child5.text))
+                                                                                    print('EM Gain:'.ljust(30)
+                                                                                          + f'{float(child5.text):0,.0f}x')
                                                                             if 'Quality'.casefold() in child5.tag.casefold():
-                                                                                print('ADC Quality:\t\t%s'%(child5.text))
+                                                                                print('ADC Quality:'.ljust(30)
+                                                                                          + f'{child5.text}')
                                                                             if 'CorrectPixelBias'.casefold() in child5.tag.casefold():
-                                                                                print('PBC On?:\t\t\t%s'%(child5.text))
+                                                                                print('PBC On?:'.ljust(30)
+                                                                                          + f'{child5.text}')
                                                                             if 'BitDepth'.casefold() in child5.tag.casefold():
                                                                                 bits = np.int32(child5.text)
                                                                     if 'Acquisition'.casefold() in child4.tag.casefold():
                                                                         for child5 in child4:
                                                                             if 'FrameRate'.casefold() in child5.tag.casefold():
-                                                                                print('Frame Rate:\t\t\t%0.3f fps'%(np.float32(child5.text)))
+                                                                                print('Frame Rate:'.ljust(30)
+                                                                                          + f'{float(child5.text):0,.3f} fps')
                                                                     if 'Experiment'.casefold() in child4.tag.casefold():
                                                                         for child5 in child4:
                                                                             if 'OnlineProcessing'.casefold() in child5.tag.casefold():
@@ -777,7 +816,8 @@ def print_selected_xml_entries(xmlStr):
                                                                                             if 'FramesCombined'.casefold() in child7.tag.casefold():
                                                                                                 framesCombined = np.int64(child7.text)
                                                                                         if isCombined:
-                                                                                            print('Frame Combination:\t%s of %d frames.'%(method,framesCombined))
+                                                                                            print('Frame Combination:'.ljust(30)
+                                                                                                + f'{method} of {framesCombined:0d} frames.')
                                                                             if 'OnlineCorrections'.casefold() in child5.tag.casefold():
                                                                                 correctionList = []
                                                                                 for child6 in child5:
@@ -808,7 +848,7 @@ def print_selected_xml_entries(xmlStr):
                                                                                                 if child7.text == 'True':
                                                                                                     correctionList.append('Cosmic')
                                                                                 if len(correctionList) > 0:
-                                                                                    print('Correction(s):\t\t',end='')
+                                                                                    print('Correction(s):'.ljust(30),end='')
                                                                                     for i in range(0,len(correctionList)):
                                                                                         print('%s'%(correctionList[i]),end='')
                                                                                         if i <len(correctionList)-1:
@@ -821,9 +861,10 @@ def print_selected_xml_entries(xmlStr):
                                                                     if 'Grating'.casefold() in child4.tag.casefold():
                                                                         for child5 in child4:
                                                                             if 'Selected'.casefold() in child5.tag.casefold():
-                                                                                print('Grating:\t\t\t%s'%(child5.text),end='')
+                                                                                print('Grating:'.ljust(30)
+                                                                                    + f'{child5.text}', end='')
                                                                             if 'CenterWavelength'.casefold() in child5.tag.casefold():
-                                                                                print(', CWL: %0.3f nm'%(np.float64(child5.text)))
+                                                                                print(f', CWL: {float(child5.text):0,.3f} nm')
                                                                     if 'Experiment'.casefold() in child4.tag.casefold():
                                                                         calibrationList = []
                                                                         for child5 in child4:
@@ -839,7 +880,8 @@ def print_selected_xml_entries(xmlStr):
                                                                                     if 'EndingWavelength'.casefold() in child6.tag.casefold():
                                                                                         endWL = np.float64(child6.text)
                                                                                 if enabled == 'True':
-                                                                                    print('Step and Glue:\t\t%0.3f nm to %0.3f nm'%(startWL,endWL))
+                                                                                    print('Step and Glue:'.ljust(30)
+                                                                                        + f'{startWL:0,.3f} nm to {endWL:0,.3f} nm')
                                                                             if 'IntensityCalibration'.casefold() in child5.tag.casefold():
                                                                                 for child6 in child5:
                                                                                     if 'Enabled'.casefold() in child6.tag.casefold():
@@ -853,9 +895,9 @@ def print_selected_xml_entries(xmlStr):
                                                                                             break
                                                                                         else:
                                                                                             calString = 'Wavelength (%s)'%(child6.text)
-                                                                                            calibrationList.append(calString)                                                                                            
+                                                                                            calibrationList.append(calString)
                                                                         if len(calibrationList) > 0:
-                                                                            print('Calibration(s):\t\t',end='')
+                                                                            print('Calibration(s):'.ljust(30),end='')
                                                                             for i in range(0,len(calibrationList)):
                                                                                 print('%s'%(calibrationList[i]),end='')
                                                                                 if i <len(calibrationList)-1:
